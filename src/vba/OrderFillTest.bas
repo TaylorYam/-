@@ -2,11 +2,14 @@ Attribute VB_Name = "OrderFillTest"
 Option Explicit
 
 '==================================================
-' 起單回填測試：把「起單信件格式.xlsx」14 張上手表各自貼進「起單回填」並執行填入，
-' 再和 ELN每日起單建檔中同一 TDCC 的紀錄比對。
+' 起單回填測試
+' 1. 樣本：把「起單信件格式.xlsx」14 張上手表各自貼進「起單回填」並執行填入，
+'    再和 ELN每日起單建檔中同一 TDCC 的紀錄比對。
+' 2. 規則：在貼上區寫入合成的信件內容，逐條檢查對照規則。
 ' 會覆蓋 Term 與貼上區，請在複本上執行。
 '==================================================
 
+' 樣本與規則測試一起跑
 Public Sub Test_OrderFill_AllIssuers()
     Dim path As String
     Dim result As String
@@ -20,7 +23,19 @@ Public Sub Test_OrderFill_AllIssuers()
         If path = "False" Then Exit Sub
     End If
 
-    result = Test_OrderFill_Report(path)
+    result = Test_OrderFill_Report(path) & vbCrLf & Test_OrderFill_RulesReport()
+    Debug.Print result
+    MsgBox Left$(result, 1000), vbInformation, "起單回填測試"
+End Sub
+
+' 只跑規則測試（不需要樣本檔）
+Public Sub Test_OrderFill_Rules()
+    Dim result As String
+
+    If MsgBox("測試會覆蓋 Term 與「起單回填」的內容，請確認是在複本上執行。要繼續嗎？", _
+              vbYesNo + vbExclamation, "起單回填測試") = vbNo Then Exit Sub
+
+    result = Test_OrderFill_RulesReport()
     Debug.Print result
     MsgBox Left$(result, 1000), vbInformation, "起單回填測試"
 End Sub
@@ -130,3 +145,221 @@ Private Function ExpectedCases() As Variant
         Array("UBS", "UBS", "FCN", "", "USD", 1, "LITE UW", "TSM UN", "NVDA UW", "ASML UW", "", 66.25, "Daily Memory", 100, 12, 98, 6, "NONE", "", 0, "", "2026/10/20", "2027/04/20", "2027/04/23", "開盤價") _
     )
 End Function
+
+'==================================================
+' 規則測試：PasteBase 寫入一封基本的起單信件，各案例改幾格後填入並檢查
+'   A 欄起依序：Product, Currency, Guaranteed Periods (m), BBG Code 1, Strike (%), KO Type,
+'   KO Barrier (%), Coupon p.a. (%), Upfront / NotePrice (%), Tenor (m), Barrier Type,
+'   KI Barrier (%), Trade Date, Issue Date, Final Valuation Date, Maturity Date（第 9 列表頭、第 10 列數值）
+'==================================================
+' 回傳測試報告文字；第一行為「RULES PASS x/y」
+Public Function Test_OrderFill_RulesReport() As String
+    Dim wsP As Worksheet, wsT As Worksheet
+    Dim report As String, fails As String, detail As String
+    Dim passCount As Long, total As Long
+    Dim ok As Boolean
+
+    Set wsP = ThisWorkbook.Worksheets("起單回填")
+    Set wsT = ThisWorkbook.Worksheets("Term")
+
+    PasteBase wsP
+    wsP.Range("E10").Value = 0.8
+    wsP.Range("E10").NumberFormat = "0.00%"
+    wsP.Range("I10").Value = 0.98
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), 80) & CompareCell(wsT.Range("O2"), 0.98) & _
+                               ExpectNote(report, "Note Price 是 0.98、沒有 %")
+    Tally "百分比看儲存格格式；沒有 % 的小數照填並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("I9").Value = "Upfront (%)"
+    wsP.Range("I10").Value = 0.0085
+    wsP.Range("I10").NumberFormat = "0.00%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O2"), 99.15)
+    Tally "Upfront 0.85%（% 格式）→ Note Price 99.15", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("K10"), "At Maturity"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("R2"), "EKI") & CompareCell(wsT.Range("S2"), 65)
+    Tally "Barrier Type：At Maturity → EKI", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("K10"), "Knock-in"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("R2"), "") & ExpectNote(report, "Barrier Type 認不得：Knock-in")
+    Tally "Barrier Type 認不得 → 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("K10"), "N/A"
+    PutText wsP.Range("L10"), "N/A"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("R2"), "NONE") & CompareCell(wsT.Range("S2"), "")
+    Tally "Barrier Type、KI 都是 N/A → NONE", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("K10"), "NONE"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("S2"), "") & ExpectNote(report, "Barrier Type 是 NONE，但 KI 有值")
+    Tally "Barrier Type 是 NONE 但 KI 有值 → KI 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("Q9").Value = "KO Memory"
+    PutText wsP.Range("Q10"), "No"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("L2"), "") & ExpectNote(report, "但 KO Memory 是 No")
+    Tally "KO Type 是 Daily Memory、KO Memory 是 No → 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("F10"), "OBSERVATION"
+    wsP.Range("Q9").Value = "KO Memory"
+    PutText wsP.Range("Q10"), "Yes"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("L2"), "Period End Memory")
+    Tally "MS：OBSERVATION + KO Memory Yes → Period End Memory", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("F10"), "Daily KO"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("L2"), "") & ExpectNote(report, "KO Type 認不得：Daily KO")
+    Tally "KO Type 認不得 → 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("N10"), "22Oct26"
+    PutText wsP.Range("O10"), "20-Oct-2027"
+    PutText wsP.Range("P10"), "25 Oct 2027"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O6"), "2026/10/22") & CompareCell(wsT.Range("O7"), "2027/10/20") & _
+                               CompareCell(wsT.Range("O8"), "2027/10/25")
+    Tally "日期：22Oct26、20-Oct-2027、25 Oct 2027", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("I10"), "99.65->99.62"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O2"), 99.62) & ExpectNote(report, "Note Price 有修改")
+    Tally "改價 99.65->99.62 → 99.62 並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A7"), "Initial price" & ChrW(&HFF1A) & "Opening price"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O9"), "開盤價")
+    Tally "全形冒號：Initial price：Opening price → 開盤價", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A7"), "Initial price: VWAP"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O9"), "VWAP")
+    Tally "期初價格 VWAP", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A12"), "Issue Date: 2026-10-21"
+    fails = RunFill(report)
+    If fails = "" Then fails = ExpectNote(report, "Issue date 不一致")
+    Tally "同一欄兩處不一致 → 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("N9:N10").ClearContents
+    PutText wsP.Range("A12"), "[ Request ID: HKGEQV1 ] [ Issue Date: 22Oct26 ] [ Issuer: GSI ]"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O6"), "2026/10/22")
+    Tally "一格多組 [ 標題: 數值 ]（GS System Remark）", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("J9").Value = "No. of Periods"
+    wsP.Range("J10").Value = 12
+    wsP.Range("Q9").Value = "Settlement Frequency"
+    PutText wsP.Range("Q10"), "Monthly"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("P2"), 12)
+    Tally "SG：Settlement Frequency Monthly → Tenor = No. of Periods", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("J9").Value = "No. of Periods"
+    wsP.Range("J10").Value = 4
+    wsP.Range("Q9").Value = "Settlement Frequency"
+    PutText wsP.Range("Q10"), "Quarterly"
+    fails = RunFill(report)
+    If fails = "" Then fails = ExpectNote(report, "Settlement Frequency 不是 Monthly")
+    Tally "SG：Settlement Frequency 不是 Monthly → Tenor 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("Q9").Value = "BBG Code 6"
+    PutText wsP.Range("Q10"), "AAPL UW"
+    fails = RunFill(report)
+    If fails = "" Then fails = ExpectNote(report, "標的超過 5 檔")
+    Tally "第 6 檔標的 → 提醒", fails, passCount, total, detail
+
+    PasteBase wsP, False
+    PutText wsP.Range("C5"), "029000000000"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("B2"), "029000000000") & CompareCell(wsT.Range("C2"), "BARC")
+    Tally "C5 手填 TDCC → B2，並用來判斷上手", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("C5"), "029000000000"
+    PutText wsP.Range("A12"), "TDCC code: 029000000001"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("B2"), "029000000000") & _
+                               ExpectNote(report, "和信裡的 029000000001 不同")
+    Tally "C5 和信裡的 TDCC 不同 → 以 C5 為準並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("C5"), "12345"
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "12 碼")
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "C5 不是 12 碼 → 不填入", fails, passCount, total, detail
+
+    OrderFill_Clear
+    Test_OrderFill_RulesReport = "RULES PASS " & passCount & "/" & total & vbCrLf & detail
+End Function
+
+Private Sub PasteBase(ByVal ws As Worksheet, Optional ByVal pickIssuer As Boolean = True)
+    Dim headers As Variant, values As Variant
+    Dim i As Long
+
+    OrderFill_Clear
+    If pickIssuer Then ws.Range("C3").Value = "BARC"
+    PutText ws.Range("A7"), "Initial price: Closing price"
+    PutText ws.Range("A8"), "PG rate: 0%"
+
+    headers = Array("Product", "Currency", "Guaranteed Periods (m)", "BBG Code 1", "Strike (%)", "KO Type", _
+                    "KO Barrier (%)", "Coupon p.a. (%)", "Upfront / NotePrice (%)", "Tenor (m)", "Barrier Type", _
+                    "KI Barrier (%)", "Trade Date", "Issue Date", "Final Valuation Date", "Maturity Date")
+    values = Array("FCN", "USD", 1, "TSM UN", 80, "Daily Memory", 100, 12, 98, 6, "EKI", 65, _
+                   "2026-10-13", "2026-10-20", "2027-04-20", "2027-04-23")
+    For i = 0 To UBound(headers)
+        ws.Cells(9, i + 1).Value = headers(i)
+        If VarType(values(i)) = vbString Then
+            PutText ws.Cells(10, i + 1), CStr(values(i))
+        Else
+            ws.Cells(10, i + 1).Value = values(i)
+        End If
+    Next i
+End Sub
+
+' 寫成文字，避免 Excel 自動轉成日期或數字
+Private Sub PutText(ByVal cell As Range, ByVal text As String)
+    cell.NumberFormat = "@"
+    cell.Value = text
+End Sub
+
+Private Function RunFill(ByRef report As String) As String
+    If Not OrderFill_Run(True, report) Then RunFill = "  填入失敗：" & Replace(report, vbCrLf, " ") & vbCrLf
+End Function
+
+Private Function ExpectNote(ByVal report As String, ByVal text As String) As String
+    If InStr(report, text) = 0 Then ExpectNote = "  摘要沒有「" & text & "」：" & Replace(report, vbCrLf, " ") & vbCrLf
+End Function
+
+Private Sub Tally(ByVal name As String, ByVal fails As String, ByRef passCount As Long, _
+                  ByRef total As Long, ByRef detail As String)
+    total = total + 1
+    If fails = "" Then
+        passCount = passCount + 1
+        detail = detail & "OK   " & name & vbCrLf
+    Else
+        detail = detail & "FAIL " & name & vbCrLf & fails
+    End If
+End Sub
