@@ -253,10 +253,40 @@ Public Function Test_OrderFill_RulesReport() As String
     Tally "期初價格 VWAP", fails, passCount, total, detail
 
     PasteBase wsP
-    PutText wsP.Range("A12"), "Issue Date: 2026-10-21"
+    PutText wsP.Range("A12"), "Strike: 85%"
     fails = RunFill(report)
-    If fails = "" Then fails = ExpectNote(report, "Issue date 不一致")
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), "") & ExpectNote(report, "Strike 不一致")
     Tally "同一欄兩處不一致 → 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("O10"), "15-Oct-27"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O7"), "2027/10/15")
+    Tally "日期：15-Oct-27", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("F10"), "OBSERVATION"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("L2"), "") & ExpectNote(report, "KO Memory 是空白")
+    Tally "MS：OBSERVATION 但沒有 KO Memory → 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("F9").Value = "Daily KO"
+    PutText wsP.Range("F10"), "Maybe"
+    wsP.Range("Q9").Value = "Memory Autocall"
+    wsP.Range("Q10").Value = True
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("L2"), "") & ExpectNote(report, "Daily KO／Memory Autocall 認不得")
+    Tally "Citi：Daily KO 不是 TRUE／FALSE → 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("F9").Value = "Daily KO"
+    wsP.Range("F10").Value = False
+    wsP.Range("Q9").Value = "Memory Autocall"
+    wsP.Range("Q10").Value = True
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("L2"), "Period End Memory")
+    Tally "Citi：Daily KO FALSE、Memory Autocall TRUE → Period End Memory", fails, passCount, total, detail
 
     PasteBase wsP
     wsP.Range("N9:N10").ClearContents
@@ -310,6 +340,13 @@ Public Function Test_OrderFill_RulesReport() As String
     fails = ExpectNote(report, "12 碼")
     If ok Then fails = fails & "  應該不填入" & vbCrLf
     Tally "C5 不是 12 碼 → 不填入", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("C5"), "29000000000"
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "12 碼")
+    If ok Then fails = fails & "  應該不填入（11 碼不補 0）" & vbCrLf
+    Tally "C5 只有 11 碼 → 不填入", fails, passCount, total, detail
 
     OrderFill_Clear
     Test_OrderFill_RulesReport = "RULES PASS " & passCount & "/" & total & vbCrLf & detail
