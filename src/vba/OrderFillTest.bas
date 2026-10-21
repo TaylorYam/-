@@ -65,6 +65,71 @@ Public Function Test_OrderFill_Report(ByVal samplePath As String) As String
     Test_OrderFill_Report = "PASS " & passCount & "/" & total & vbCrLf & detail
 End Function
 
+'==================================================
+' 清空回歸測試（#4）：選過 C3 後 Excel 會加一個隱藏的下拉框 Shape，按清空不能因此出現 1004；
+' 貼上區的圖片要刪掉，按鈕與 C3 下拉清單要保留。
+'==================================================
+Public Sub Test_OrderFill_Clear()
+    Dim result As String
+
+    If MsgBox("測試會清空「起單回填」的內容，請確認是在複本上執行。要繼續嗎？", _
+              vbYesNo + vbExclamation, "起單回填測試") = vbNo Then Exit Sub
+
+    result = Test_OrderFill_ClearReport()
+    Debug.Print result
+    MsgBox result, vbInformation, "起單回填測試"
+End Sub
+
+' 回傳測試報告文字；第一行為 PASS 或 FAIL
+Public Function Test_OrderFill_ClearReport() As String
+    Const PASTED_NAME As String = "OrderFillTest_Pasted"
+    Dim ws As Worksheet
+    Dim shp As Shape
+    Dim fails As String
+    Dim btnCount As Long
+
+    Set ws = ThisWorkbook.Worksheets("起單回填")
+    btnCount = ws.Buttons.Count
+
+    ws.Activate
+    ws.Range("C3").Select    ' 讓 Excel 建立 C3 下拉清單的隱藏下拉框
+    Set shp = ws.Shapes.AddShape(msoShapeRectangle, ws.Range("B8").Left, ws.Range("B8").Top, 40, 20)
+    shp.Name = PASTED_NAME   ' 代替信件貼上的圖片
+
+    On Error Resume Next
+    OrderFill_Clear
+    If Err.Number <> 0 Then fails = fails & "  清空出錯：" & Err.Number & " " & Err.Description & vbCrLf
+    Err.Clear
+    Set shp = Nothing
+    Set shp = ws.Shapes(PASTED_NAME)
+    On Error GoTo 0
+
+    If Not shp Is Nothing Then
+        fails = fails & "  貼上區的圖片沒有刪掉" & vbCrLf
+        shp.Delete
+    End If
+    If ws.Buttons.Count <> btnCount Then
+        fails = fails & "  按鈕數量 預期 " & btnCount & " 實際 " & ws.Buttons.Count & vbCrLf
+    End If
+    If Not HasListValidation(ws.Range("C3")) Then fails = fails & "  C3 下拉清單不見了" & vbCrLf
+
+    If fails = "" Then
+        Test_OrderFill_ClearReport = "PASS"
+    Else
+        Test_OrderFill_ClearReport = "FAIL" & vbCrLf & fails
+    End If
+End Function
+
+Private Function HasListValidation(ByVal cell As Range) As Boolean
+    Dim t As Long
+
+    t = -1
+    On Error Resume Next
+    t = cell.Validation.Type
+    On Error GoTo 0
+    HasListValidation = (t = xlValidateList)
+End Function
+
 Private Function CompareTerm(ByVal wsT As Worksheet, ByVal tc As Variant) As String
     Dim out As String
     Dim cols As Variant
