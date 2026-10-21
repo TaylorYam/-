@@ -1,0 +1,3 @@
+# VBA 模組：工作目錄用 cp950（VBE 匯入/匯出的編碼），Git 內以 UTF-8 儲存
+*.bas working-tree-encoding=CP950 eol=crlf
+*.cls working-tree-encoding=CP950 eol=crlf
