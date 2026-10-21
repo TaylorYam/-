@@ -11,7 +11,8 @@ Option Explicit
 '   2. 左右一組：左格標題、右格數值（例：HSBC 的日期區）
 '   3. 同一格「標題: 數值」（例：Initial price: Closing price；GS 的 [ Issue Date: 20Oct26 ]）
 '
-' 對照規則與 structured-product-workflow 讀 (Order) 信的規則一致（order_formats.py、order_template.py）：
+' 對照規則與 structured-product-workflow 讀 (Order) 信的規則一致
+' （該 repo commit f0bcce0 之前的 src/sp_workflow/order_formats.py、order_template.py）：
 ' 不猜值；讀不到、認不得、兩處不一致的欄位留空，並在摘要提醒。
 '==================================================
 
@@ -92,10 +93,10 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Set ws = ThisWorkbook.Worksheets(SHEET_NAME)
     Set wsT = ThisWorkbook.Worksheets("Term")
 
-    '--- 手填 TDCC（C5）：有值時以它為準；不是 12 碼就不填 ---
+    '--- 手填 TDCC（C5，文字格式）：有值時以它為準；不是剛好 12 碼數字就整個不填 ---
     If Not IsBlankVal(ws.Range(CELL_TDCC_INPUT).Value) Then
-        manualTdcc = NormTDCC(ws.Range(CELL_TDCC_INPUT).Value)
-        If manualTdcc = "" Then
+        manualTdcc = Trim$(CStr(ws.Range(CELL_TDCC_INPUT).Value))
+        If Not (manualTdcc Like "############") Then
             report = CELL_TDCC_INPUT & " 的 TDCC 要是 12 碼數字，Term 沒有變更。"
             If Not silent Then MsgBox report, vbExclamation, "起單回填"
             Exit Function
@@ -395,12 +396,22 @@ Private Function ReadPasteArea(ByVal ws As Worksheet) As Variant
             Select Case VarType(arr(r, c))
                 Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte
                     If InStr(ws.Cells(PASTE_TOP + r - 1, c).NumberFormat, "%") > 0 Then
-                        arr(r, c) = Trim$(Str$(Round(CDbl(arr(r, c)) * 100, 8))) & "%"
+                        arr(r, c) = NumText(CDbl(arr(r, c)) * 100) & "%"
                     End If
             End Select
         Next c
     Next r
     ReadPasteArea = arr
+End Function
+
+' 數字轉成一般寫法的文字（小數點用「.」）：0.85 → "0.85"；Str$ 會寫成 " .85"、極小值會變成 1E-05
+Private Function NumText(ByVal n As Double) As String
+    Dim s As String
+    s = Format$(Abs(n), "0.########")
+    s = Replace(s, Mid$(Format$(0.5, "0.0"), 2, 1), ".")   ' Format$ 依地區設定的小數點
+    If Right$(s, 1) = "." Then s = Left$(s, Len(s) - 1)
+    If n < 0 Then s = "-" & s
+    NumText = s
 End Function
 
 '==================================================
