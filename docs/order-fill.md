@@ -10,12 +10,19 @@
 
 把上手回覆的起單信件貼到「起單回填」工作表，按「填入」回填 `Term!A2:T2` 與 `Term!O5:O9`；按「清空」清掉貼上區，再貼下一封。原始碼在 `src/vba/`。
 
-### 安裝（每份活頁簿做一次）
+### 安裝
 
-1. 開啟 `特別約定事項&高齡適合度聲明書Generator_*.xlsm`，按 `Alt+F11` 開 VBE。
-2. 「檔案 → 匯入檔案」，匯入 `src/vba/OrderFill.bas`。測試用的 `src/vba/OrderFillTest.bas` 視需要匯入。
-3. 回到 Excel，按 `Alt+F8` 執行 `OrderFill_Setup`，會在 `Term` 後面建立「起單回填」工作表與兩個按鈕。
-4. 存檔。
+repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內建 `OrderFill`、`OrderFillTest` 模組與「起單回填」工作表，開啟即可使用。
+
+用在其他活頁簿，或模組改版後要更新時：
+
+1. 開啟活頁簿，按 `Alt+F11` 開 VBE。
+2. 已有舊版 `OrderFill`／`OrderFillTest` 時，先在專案視窗對模組按右鍵「移除」（不必匯出）。
+3. 「檔案 → 匯入檔案」，匯入 `src/vba/OrderFill.bas`。測試用的 `src/vba/OrderFillTest.bas` 視需要匯入。
+4. 回到 Excel，按 `Alt+F8` 執行 `OrderFill_Setup`，會在 `Term` 後面建立「起單回填」工作表與兩個按鈕。
+5. 存檔。
+
+`src/vba/` 的 `.bas` 是原始碼。修改 `.bas` 後，要把新版匯入 repo 的 `.xlsm` 並一起 commit，讓兩者一致。
 
 `.bas` 檔在工作目錄是 cp950 編碼（VBE 匯入時使用的編碼），Git 內以 UTF-8 儲存，由 `.gitattributes` 自動轉換。
 
@@ -60,10 +67,11 @@
 
 ### 測試
 
-在活頁簿**複本**匯入 `OrderFillTest.bas` 後執行：
+在活頁簿**複本**執行以下測試（repo 的 `.xlsm` 已內建 `OrderFillTest`；其他活頁簿要先匯入 `OrderFillTest.bas`）：
 
 - `Test_OrderFill_AllIssuers`：把 `起單信件格式.xlsx` 的 14 張上手表逐一貼入、填入，再和 ELN每日起單建檔中同一 TDCC 的紀錄比對；接著跑規則測試。
 - `Test_OrderFill_Rules`：只跑規則測試（不需要樣本檔），在貼上區寫入合成的信件內容，逐條檢查上面的回填規則。
+- `Test_OrderFill_Clear`：先選 C3 再按「清空」，確認不會出現執行階段錯誤 1004、貼上區的圖片會刪掉，按鈕與 C3 下拉清單保留。
 
 已知限制：HSBC 的日期是 `dd/mm/yyyy` 文字，程式依日在前解析。如果 Excel 貼上時已自動轉成日期，而且日、月都 ≤ 12，可能會被轉錯，回填後請核對。
 
@@ -73,12 +81,19 @@
 
 Paste an issuer's order reply mail into the `起單回填` sheet and press **填入** (Fill) to populate `Term!A2:T2` and `Term!O5:O9`. Press **清空** (Clear) to clear the paste area before pasting the next mail. Source code is in `src/vba/`.
 
-### Installation (once per workbook)
+### Installation
 
-1. Open `特別約定事項&高齡適合度聲明書Generator_*.xlsm` and press `Alt+F11` to open the VBE.
-2. Use **File → Import File** to import `src/vba/OrderFill.bas`. Import the test module `src/vba/OrderFillTest.bas` if needed.
-3. Back in Excel, press `Alt+F8` and run `OrderFill_Setup`. It creates the `起單回填` sheet and its two buttons after `Term`.
-4. Save the workbook.
+The repository's `特別約定事項&高齡適合度聲明書Generator_*.xlsm` already contains the `OrderFill` and `OrderFillTest` modules and the `起單回填` sheet, so it works as soon as it is opened.
+
+To use it in another workbook, or to update after the modules change:
+
+1. Open the workbook and press `Alt+F11` to open the VBE.
+2. If an older `OrderFill` / `OrderFillTest` is present, right-click it in the Project window and choose **Remove** (no export needed).
+3. Use **File → Import File** to import `src/vba/OrderFill.bas`. Import the test module `src/vba/OrderFillTest.bas` if needed.
+4. Back in Excel, press `Alt+F8` and run `OrderFill_Setup`. It creates the `起單回填` sheet and its two buttons after `Term`.
+5. Save the workbook.
+
+The `.bas` files in `src/vba/` are the source. After changing a `.bas` file, import the new version into the repository's `.xlsm` and commit both together so they stay in sync.
 
 The `.bas` files are cp950 in the working tree (the encoding VBE imports) and UTF-8 inside Git; `.gitattributes` converts between them.
 
@@ -123,9 +138,10 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 
 ### Testing
 
-In a **copy** of the workbook, import `OrderFillTest.bas` and run:
+Run these tests in a **copy** of the workbook (the repository's `.xlsm` already contains `OrderFillTest`; import `OrderFillTest.bas` into other workbooks first):
 
 - `Test_OrderFill_AllIssuers`: pastes each of the 14 issuer sheets in `起單信件格式.xlsx`, runs the fill, and compares the result with the record for the same TDCC in ELN每日起單建檔; then runs the rule tests.
 - `Test_OrderFill_Rules`: runs only the rule tests (no sample file needed), writing synthetic mail content into the paste area to check each fill rule above.
+- `Test_OrderFill_Clear`: selects C3 and then presses **清空**, checking that no run-time error 1004 appears, pictures in the paste area are deleted, and the buttons and the C3 drop-down remain.
 
 Known limitation: HSBC dates are `dd/mm/yyyy` text and are parsed day-first. If Excel has already converted such a value into a date when it was pasted, and both day and month are ≤ 12, the date may be wrong. Check it after filling.

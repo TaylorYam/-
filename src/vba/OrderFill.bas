@@ -53,7 +53,10 @@ Public Sub OrderFill_Clear()
     ' 從信件貼上的圖片一併刪除（按鈕在貼上區上方，不受影響）
     For i = ws.Shapes.Count To 1 Step -1
         Set shp = ws.Shapes(i)
-        If shp.TopLeftCell.Row >= PASTE_TOP Then shp.Delete
+        ' 表單控制項不動：選過 C3 後 Excel 會加一個隱藏的下拉框，它沒有 TopLeftCell，讀取會出現 1004
+        If shp.Type <> msoFormControl Then
+            If shp.TopLeftCell.Row >= PASTE_TOP Then shp.Delete
+        End If
     Next i
 
     ws.Activate
