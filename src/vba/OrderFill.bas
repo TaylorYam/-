@@ -9,21 +9,30 @@ Option Explicit
 ' 找值方式：依表頭名稱（不依欄位位置），支援三種排法
 '   1. 表格：一列表頭、下一列數值（大部分上手）
 '   2. 左右一組：左格標題、右格數值（例：HSBC 的日期區）
-'   3. 同一格「標題: 數值」（例：Initial price: Closing price）
+'   3. 同一格「標題: 數值」（例：Initial price: Closing price；GS 的 [ Issue Date: 20Oct26 ]）
+'
+' 對照規則與 structured-product-workflow 讀 (Order) 信的規則一致
+' （該 repo commit f0bcce0 之前的 src/sp_workflow/order_formats.py、order_template.py）：
+' 不猜值；讀不到、認不得、兩處不一致的欄位留空，並在摘要提醒。
 '==================================================
 
 Private Const SHEET_NAME As String = "起單回填"
 Private Const PASTE_TOP As Long = 7          ' 貼上區從第 7 列開始
 Private Const CELL_ISSUER_PICK As String = "C3"
 Private Const CELL_ISSUER_RESULT As String = "C4"
+Private Const CELL_TDCC_INPUT As String = "C5"
 
 Private Const PRI_TABLE As Long = 1
 Private Const PRI_PAIR As Long = 2
 Private Const PRI_INLINE As Long = 3
 
 Private mHeaderMap As Object   ' 正規化表頭 → 欄位代號
-Private mVal As Object         ' 欄位代號 → 原始值
-Private mPri As Object         ' 欄位代號 → 來源優先序
+Private mVal As Object         ' 欄位代號 → 值（改價已取最後的值）
+Private mKey As Object         ' 欄位代號 → 比較用的值
+Private mSrc As Object         ' 欄位代號 → 讀到的值與位置
+Private mConflict As Object    ' 欄位代號 → 兩處以上不一致時的各處值
+Private mFlag As Object        ' 欄位代號 → 已經提醒過（格式不認得、不一致、認不得）
+Private mNotes As String       ' 摘要的提醒
 
 '==================================================
 ' 按鈕：清空
@@ -39,7 +48,7 @@ Public Sub OrderFill_Clear()
         .UnMerge
         .Clear
     End With
-    ws.Range(CELL_ISSUER_PICK & "," & CELL_ISSUER_RESULT).ClearContents
+    ws.Range(CELL_ISSUER_PICK & "," & CELL_ISSUER_RESULT & "," & CELL_TDCC_INPUT).ClearContents
 
     ' 從信件貼上的圖片一併刪除（按鈕在貼上區上方，不受影響）
     For i = ws.Shapes.Count To 1 Step -1
@@ -69,12 +78,12 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Dim ws As Worksheet, wsT As Worksheet
     Dim data As Variant
     Dim issuer As String, issuerHow As String
-    Dim warn As String
     Dim prevEvents As Boolean
 
-    Dim product As String, tdcc As String, ccy As String
+    Dim product As String, tdcc As String, mailTdcc As String, manualTdcc As String, ccy As String
     Dim guar As Variant, strike As Variant, koBarrier As Variant
-    Dim coupon As Variant, notePrice As Variant, tenor As Variant
+    Dim coupon As Variant, notePrice As Variant, upfront As Variant
+    Dim tenor As Variant, periods As Variant
     Dim ki As Variant, pgRate As Variant
     Dim koType As String, barrierType As String, initPrice As String
     Dim ul(1 To 5) As String
@@ -87,6 +96,16 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Set ws = ThisWorkbook.Worksheets(SHEET_NAME)
     Set wsT = ThisWorkbook.Worksheets("Term")
 
+    '--- 手填 TDCC（C5，文字格式）：有值時以它為準；不是剛好 12 碼數字就整個不填 ---
+    If Not IsBlankVal(ws.Range(CELL_TDCC_INPUT).Value) Then
+        manualTdcc = Trim$(CStr(ws.Range(CELL_TDCC_INPUT).Value))
+        If Not (manualTdcc Like "############") Then
+            report = CELL_TDCC_INPUT & " 的 TDCC 要是 12 碼數字，Term 沒有變更。"
+            If Not silent Then MsgBox report, vbExclamation, "起單回填"
+            Exit Function
+        End If
+    End If
+
     '--- 讀貼上區 ---
     data = ReadPasteArea(ws)
     If IsEmpty(data) Then
@@ -97,8 +116,16 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
 
     CollectFields data
 
-    '--- TDCC（信裡沒有就留空）---
-    tdcc = NormTDCC(GetVal("TDCC"))
+    '--- TDCC：C5 → 信裡的 TDCC ---
+    mailTdcc = NormTDCC(GetVal("TDCC"))
+    If manualTdcc <> "" Then
+        tdcc = manualTdcc
+        If mailTdcc <> "" And mailTdcc <> manualTdcc Then
+            AddNote CELL_TDCC_INPUT & " 的 TDCC 和信裡的 " & mailTdcc & " 不同，B2 以 " & CELL_TDCC_INPUT & " 為準"
+        End If
+    Else
+        tdcc = mailTdcc
+    End If
 
     '--- 判斷上手 ---
     issuer = Trim$(CStr(ws.Range(CELL_ISSUER_PICK).Value))
@@ -127,7 +154,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     product = NormProduct(GetVal("PRODUCT"))
     If product = "" Then
         product = "FCN"
-        warn = AddWarn(warn, "信中找不到 Product，A2 預設填 FCN")
+        WarnMissing "PRODUCT"
     End If
 
     ccy = UCase$(Trim$(CStr(GetVal("CURRENCY"))))
@@ -135,9 +162,12 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     For i = 1 To 5
         ul(i) = UCase$(Trim$(CStr(GetVal("UL" & i))))
     Next i
+    If Not IsBlankVal(GetVal("UL6")) Then
+        AddNote "標的超過 5 檔（第 6 檔：" & GetVal("UL6") & "），Term 只放得下 5 檔"
+    End If
 
     guar = NumField("GUAR", 0)
-    ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月
+    ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月（0 → 1）
     If issuer = "Citi" And Not IsEmpty(guar) Then guar = guar + 1
 
     strike = NumField("STRIKE", 3)
@@ -145,19 +175,44 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     coupon = NumField("COUPON", 1)
     ki = NumField("KI", 3)
     pgRate = NumField("PGRATE", 0)
-    tenor = NumField("TENOR", 0)
 
-    If issuer = "Citi" Then
-        ' Citi 只給 Upfront（手續費），Note Price = 100 - Upfront
-        notePrice = NumField("PRICE", 0)
-        If Not IsEmpty(notePrice) Then notePrice = Round(100 - notePrice, 4)
-    Else
-        notePrice = NumField("PRICE", 3)
+    tenor = NumField("TENOR", 0)
+    If IsEmpty(tenor) And Not IsFlagged("TENOR") Then
+        ' SG 沒有 Tenor：Settlement Frequency 是 Monthly 時 Tenor = No. of Periods
+        periods = NumField("PERIODS", 0)
+        If Not IsEmpty(periods) Then
+            If LCase$(CollapseSpaces(CStr(GetVal("SETTLEFREQ")))) = "monthly" Then
+                tenor = periods
+            Else
+                FlagField "TENOR", "No. of Periods 是 " & periods & "，但 Settlement Frequency 不是 Monthly（" & _
+                                   ShowBlank(GetVal("SETTLEFREQ")) & "），P2 留空"
+            End If
+        End If
+    End If
+
+    notePrice = NumField("PRICE", 3)
+    If IsEmpty(notePrice) And Not IsFlagged("PRICE") Then
+        ' Citi 只給 Upfront（UF），Note Price = 100 - Upfront
+        upfront = NumField("UPFRONT", 0)
+        If Not IsEmpty(upfront) Then notePrice = Round(100 - upfront, 4)
     End If
 
     koType = NormKOType(GetVal("KOTYPE"), GetVal("KOMEMORY"), GetVal("MEMAUTOCALL"), GetVal("DAILYKO"))
+
     barrierType = NormBarrierType(GetVal("BARRIERTYPE"))
-    If barrierType = "NONE" Then ki = Empty
+    If barrierType = "" And Not IsFlagged("BARRIERTYPE") Then
+        If Not IsEmpty(ki) Then
+            FlagField "BARRIERTYPE", "有 KI（" & ki & "）但沒有 Barrier Type，R2 留空"
+        ElseIf ul(1) <> "" And Not IsFlagged("KI") Then
+            barrierType = "NONE"   ' 例：SG 的 KI Type、KI 都是 N/A
+        End If
+    End If
+    If barrierType = "NONE" Then
+        If Not IsEmpty(ki) Then
+            If ki <> 0 Then AddNote "Barrier Type 是 NONE，但 KI 有值（" & ki & "），S2 留空"
+        End If
+        ki = Empty
+    End If
 
     initPrice = NormInitPrice(GetVal("INITPRICE"))
 
@@ -166,28 +221,28 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     hasFinal = DateField("FINAL", finalDate)
     hasMaturity = DateField("MATURITY", maturityDate)
 
-    '--- 提醒：找不到的欄位 ---
-    If tdcc = "" Then warn = AddWarn(warn, "信中找不到 TDCC，B2 留空")
-    If ccy = "" Then warn = AddWarn(warn, "信中找不到 Currency")
-    If IsEmpty(guar) Then warn = AddWarn(warn, "信中找不到 Guaranteed Period / Non-call")
-    If ul(1) = "" Then warn = AddWarn(warn, "信中找不到標的")
-    If IsEmpty(strike) Then warn = AddWarn(warn, "信中找不到 Strike")
-    If koType = "" Then warn = AddWarn(warn, "信中找不到 KO Type")
-    If IsEmpty(koBarrier) Then warn = AddWarn(warn, "信中找不到 KO Barrier")
-    If IsEmpty(coupon) Then warn = AddWarn(warn, "信中找不到 Coupon")
-    If IsEmpty(notePrice) Then warn = AddWarn(warn, "信中找不到 Note Price")
-    If IsEmpty(tenor) Then warn = AddWarn(warn, "信中找不到 Tenor")
-    If barrierType = "" Then warn = AddWarn(warn, "信中找不到 Barrier Type")
-    If barrierType <> "" And barrierType <> "NONE" And IsEmpty(ki) Then warn = AddWarn(warn, "信中找不到 KI")
-    If IsEmpty(pgRate) Then warn = AddWarn(warn, "信中找不到 PG rate")
+    '--- 提醒：找不到的欄位（已提醒過格式或不一致的不重複）---
+    If tdcc = "" Then WarnMissing "TDCC"
+    If ccy = "" Then WarnMissing "CURRENCY"
+    If IsEmpty(guar) Then WarnMissing "GUAR"
+    If ul(1) = "" Then WarnMissing "UL1"
+    If IsEmpty(strike) Then WarnMissing "STRIKE"
+    If koType = "" Then WarnMissing "KOTYPE"
+    If IsEmpty(koBarrier) Then WarnMissing "KOBARRIER"
+    If IsEmpty(coupon) Then WarnMissing "COUPON"
+    If IsEmpty(notePrice) And Not IsFlagged("UPFRONT") Then WarnMissing "PRICE"
+    If IsEmpty(tenor) Then WarnMissing "TENOR"
+    If barrierType = "" Then WarnMissing "BARRIERTYPE"
+    If barrierType <> "" And barrierType <> "NONE" And IsEmpty(ki) Then WarnMissing "KI"
+    If IsEmpty(pgRate) Then WarnMissing "PGRATE"
     If Not hasTrade Then
         tradeDate = Date
-        warn = AddWarn(warn, "信中找不到 Trade date，O5 填今天")
+        WarnMissing "TRADE"
     End If
-    If Not hasIssue Then warn = AddWarn(warn, "信中找不到 Issue date，O6 由系統推算")
-    If Not hasFinal Then warn = AddWarn(warn, "信中找不到 Final valuation date，O7 由系統推算")
-    If Not hasMaturity Then warn = AddWarn(warn, "信中找不到 Maturity date，O8 由系統推算")
-    If initPrice = "" Then warn = AddWarn(warn, "信中找不到期初價格，O9 留空")
+    If Not hasIssue Then WarnMissing "ISSUE"
+    If Not hasFinal Then WarnMissing "FINAL"
+    If Not hasMaturity Then WarnMissing "MATURITY"
+    If initPrice = "" Then WarnMissing "INITPRICE"
 
     '--- 寫入 Term ---
     On Error GoTo Fail
@@ -234,8 +289,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     wsT.Range("A2").Select
 
     report = "已回填 Term。" & vbCrLf & "上手：" & issuer & "（" & issuerHow & "）"
-    If warn <> "" Then report = report & vbCrLf & vbCrLf & "請留意：" & vbCrLf & warn
-    If Not silent Then MsgBox report, IIf(warn = "", vbInformation, vbExclamation), "起單回填"
+    If mNotes <> "" Then report = report & vbCrLf & vbCrLf & "請留意：" & vbCrLf & mNotes
+    If Not silent Then MsgBox report, IIf(mNotes = "", vbInformation, vbExclamation), "起單回填"
     OrderFill_Run = True
     Exit Function
 
@@ -282,6 +337,7 @@ Public Sub OrderFill_SetupCore(ByVal silent As Boolean)
 
     ws.Range("A3").Value = "上手（自動判斷失敗時才選）"
     ws.Range("A4").Value = "判斷結果"
+    ws.Range("A5").Value = "TDCC（信裡沒有時手填）"
     ws.Range("A6").Value = "↓ 請把上手的起單信件內容貼在第 " & PASTE_TOP & " 列以下（建議貼在 A" & PASTE_TOP & "）"
     ws.Range("A6").Font.Color = RGB(192, 0, 0)
     ws.Columns("A").ColumnWidth = 28
@@ -295,6 +351,12 @@ Public Sub OrderFill_SetupCore(ByVal silent As Boolean)
              Formula1:="=Variable!$B$2:$B$" & lastV
     End With
     ws.Range(CELL_ISSUER_PICK).Interior.Color = RGB(255, 242, 204)
+
+    ' 手填 TDCC 用文字格式，保留開頭的 0
+    With ws.Range(CELL_TDCC_INPUT)
+        .NumberFormat = "@"
+        .Interior.Color = RGB(255, 242, 204)
+    End With
 
     Set btn = ws.Buttons.Add(ws.Range("E1").Left, ws.Range("E1").Top, 90, 30)
     btn.Caption = "清空"
@@ -311,11 +373,13 @@ End Sub
 
 '==================================================
 ' 讀取貼上區為 2D 陣列；沒有資料回傳 Empty
+' 百分比格式的數字改成帶 % 的文字（0.8 → "80%"），和信裡看到的寫法一致
 '==================================================
 Private Function ReadPasteArea(ByVal ws As Worksheet) As Variant
     Dim lastRow As Long, lastCol As Long
     Dim ur As Range
     Dim arr As Variant
+    Dim r As Long, c As Long
 
     Set ur = ws.UsedRange
     lastRow = ur.Row + ur.Rows.Count - 1
@@ -329,28 +393,54 @@ Private Function ReadPasteArea(ByVal ws As Worksheet) As Variant
     Else
         arr = ws.Range(ws.Cells(PASTE_TOP, 1), ws.Cells(lastRow, lastCol)).Value
     End If
+
+    For r = 1 To UBound(arr, 1)
+        For c = 1 To UBound(arr, 2)
+            Select Case VarType(arr(r, c))
+                Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte
+                    If InStr(ws.Cells(PASTE_TOP + r - 1, c).NumberFormat, "%") > 0 Then
+                        arr(r, c) = NumText(CDbl(arr(r, c)) * 100) & "%"
+                    End If
+            End Select
+        Next c
+    Next r
     ReadPasteArea = arr
 End Function
 
+' 數字轉成一般寫法的文字（小數點用「.」）：0.85 → "0.85"；Str$ 會寫成 " .85"、極小值會變成 1E-05
+Private Function NumText(ByVal n As Double) As String
+    Dim s As String
+    s = Format$(Abs(n), "0.########")
+    s = Replace(s, Mid$(Format$(0.5, "0.0"), 2, 1), ".")   ' Format$ 依地區設定的小數點
+    If Right$(s, 1) = "." Then s = Left$(s, Len(s) - 1)
+    If n < 0 Then s = "-" & s
+    NumText = s
+End Function
+
 '==================================================
-' 掃描貼上區，把找得到的欄位放進 mVal / mPri
+' 掃描貼上區，把找到的欄位放進 mVal；兩處不一致的欄位留空並提醒
 '==================================================
 Private Sub CollectFields(ByRef data As Variant)
     Dim nR As Long, nC As Long
     Dim r As Long, c As Long, r2 As Long
     Dim isHeader() As Boolean
     Dim cnt As Long, valueRow As Long
-    Dim key As String, s As String, p As Long
+    Dim key As String, s As String
+    Dim segs As Variant, seg As Variant, k As Variant
 
     BuildHeaderMap
     Set mVal = CreateObject("Scripting.Dictionary")
-    Set mPri = CreateObject("Scripting.Dictionary")
+    Set mKey = CreateObject("Scripting.Dictionary")
+    Set mSrc = CreateObject("Scripting.Dictionary")
+    Set mConflict = CreateObject("Scripting.Dictionary")
+    Set mFlag = CreateObject("Scripting.Dictionary")
+    mNotes = ""
 
     nR = UBound(data, 1)
     nC = UBound(data, 2)
     ReDim isHeader(1 To nR)
 
-    '--- 1. 表格：一列有 3 個以上認得的表頭，就把下一列當數值 ---
+    '--- 1. 表格：一列有 3 個以上認得的表頭，就找下一列的數值 ---
     For r = 1 To nR
         cnt = 0
         For c = 1 To nC
@@ -379,7 +469,7 @@ Private Sub CollectFields(ByRef data As Variant)
         End If
     Next r
 
-    '--- 2. 左右一組、3.「標題: 數值」 ---
+    '--- 2. 左右一組、3.「標題: 數值」（一格裡有好幾組 [ 標題: 數值 ] 時逐組拆開）---
     For r = 1 To nR
         If Not isHeader(r) Then
             For c = 1 To nC
@@ -390,54 +480,103 @@ Private Sub CollectFields(ByRef data As Variant)
                         If Not IsBlankVal(data(r, c + 1)) Then RecordField mHeaderMap(key), data(r, c + 1), PRI_PAIR
                     End If
 
-                    p = InStr(s, ":")
-                    If p > 1 And p < 40 Then
-                        key = NormKey(Left$(s, p - 1))
-                        If mHeaderMap.Exists(key) Then RecordField mHeaderMap(key), Trim$(Mid$(s, p + 1)), PRI_INLINE
+                    If InStr(s, "[") > 0 Then
+                        segs = Split(Replace(s, "]", "["), "[")
+                    Else
+                        segs = Array(s)
                     End If
+                    For Each seg In segs
+                        RecordInline Trim$(CStr(seg))
+                    Next seg
                 End If
             Next c
         End If
     Next r
+
+    For Each k In mConflict.Keys
+        mVal.Remove k
+        FlagField CStr(k), FieldLabel(CStr(k)) & " 不一致：" & mConflict(k) & "，" & MissingAction(CStr(k))
+    Next k
 End Sub
 
-' 依欄位型別檢查後記錄；同一欄位保留優先序較高（數字較小）、較早出現的值
+' 「標題: 數值」或「標題：數值」
+Private Sub RecordInline(ByVal s As String)
+    Dim p As Long, p2 As Long, key As String
+
+    p = InStr(s, ":")
+    p2 = InStr(s, ChrW(&HFF1A))   ' 全形冒號
+    If p2 > 0 And (p = 0 Or p2 < p) Then p = p2
+    If p > 1 And p < 40 Then
+        key = NormKey(Left$(s, p - 1))
+        If mHeaderMap.Exists(key) Then RecordField mHeaderMap(key), Trim$(Mid$(s, p + 1)), PRI_INLINE
+    End If
+End Sub
+
+' 依欄位型別檢查後記錄；同一欄出現好幾次時，值不同就記為不一致
 Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As Long)
+    Dim raw As Variant, key As String, revised As Boolean
     Dim d As Date, n As Double, pct As Boolean
 
     If IsBlankVal(v) Then Exit Sub
+    raw = v
+    If VarType(v) = vbString Then
+        v = LatestText(CStr(v), revised)
+        If IsBlankVal(v) Then Exit Sub
+    End If
 
     Select Case field
         Case "TRADE", "ISSUE", "FINAL", "MATURITY"
-            If Not ParseDateVal(v, d) Then Exit Sub
-        Case "GUAR", "STRIKE", "KOBARRIER", "COUPON", "PRICE", "TENOR", "KI", "PGRATE"
-            If Not ParseNumber(v, n, pct) Then Exit Sub
+            If Not ParseDateVal(v, d) Then
+                FlagField field, FieldLabel(field) & " 格式不認得：" & ShowVal(raw) & "，" & MissingAction(field)
+                Exit Sub
+            End If
+            key = "D" & CStr(CLng(d))
+        Case "GUAR", "STRIKE", "KOBARRIER", "COUPON", "PRICE", "UPFRONT", "TENOR", "PERIODS", "KI", "PGRATE"
+            If Not ParseNumber(v, n, pct) Then
+                FlagField field, FieldLabel(field) & " 格式不認得：" & ShowVal(raw) & "，" & MissingAction(field)
+                Exit Sub
+            End If
+            key = "N" & Trim$(Str$(Round(n, 6)))
+        Case "TDCC"
+            key = "C" & NormTDCC(v)
+        Case Else
+            key = "T" & LCase$(CollapseSpaces(CStr(v)))
     End Select
+    If revised Then AddNote FieldLabel(field) & " 有修改：" & ShowVal(raw) & "，取最後的值"
 
-    If mPri.Exists(field) Then
-        If mPri(field) <= pri Then Exit Sub
+    If mKey.Exists(field) Then
+        If mKey(field) <> key Then
+            If Not mConflict.Exists(field) Then mConflict(field) = mSrc(field)
+            mConflict(field) = mConflict(field) & "／" & ShowVal(raw) & "（" & PriLabel(pri) & "）"
+        End If
+        Exit Sub
     End If
     mVal(field) = v
-    mPri(field) = pri
+    mKey(field) = key
+    mSrc(field) = ShowVal(raw) & "（" & PriLabel(pri) & "）"
 End Sub
 
 Private Function GetVal(ByVal field As String) As Variant
     If mVal.Exists(field) Then GetVal = mVal(field) Else GetVal = ""
 End Function
 
-' 數值欄位：pctLimit > 0 時，沒有 % 符號且 0 < 值 <= pctLimit 視為小數表示（0.8 → 80）
-Private Function NumField(ByVal field As String, ByVal pctLimit As Double) As Variant
-    Dim n As Double, pct As Boolean
+' 數值欄位：帶 % 的值是百分比數字（80% → 80）；沒有 % 時照填。
+' decimalLimit > 0 且沒有 % 的值像小數（0 < 值 <= decimalLimit；Coupon 是 < 1）時提醒確認
+Private Function NumField(ByVal field As String, ByVal decimalLimit As Double) As Variant
+    Dim n As Double, pct As Boolean, looksDecimal As Boolean
 
     NumField = Empty
     If Not mVal.Exists(field) Then Exit Function
     If Not ParseNumber(mVal(field), n, pct) Then Exit Function
 
-    If pctLimit > 0 And Not pct Then
+    If decimalLimit > 0 And Not pct And n > 0 Then
         If field = "COUPON" Then
-            If n > 0 And n < pctLimit Then n = n * 100
-        ElseIf n > 0 And n <= pctLimit Then
-            n = n * 100
+            looksDecimal = (n < decimalLimit)
+        Else
+            looksDecimal = (n <= decimalLimit)
+        End If
+        If looksDecimal Then
+            AddNote FieldLabel(field) & " 是 " & n & "、沒有 %，照填；請確認是不是 " & Round(n * 100, 4) & "%"
         End If
     End If
     NumField = Round(n, 4)
@@ -445,6 +584,94 @@ End Function
 
 Private Function DateField(ByVal field As String, ByRef d As Date) As Boolean
     If mVal.Exists(field) Then DateField = ParseDateVal(mVal(field), d)
+End Function
+
+'==================================================
+' 提醒
+'==================================================
+Private Sub AddNote(ByVal text As String)
+    mNotes = AddWarn(mNotes, text)
+End Sub
+
+' 提醒並記下這欄已提醒過，之後不再重複提醒「找不到」
+Private Sub FlagField(ByVal field As String, ByVal text As String)
+    mFlag(field) = True
+    AddNote text
+End Sub
+
+Private Function IsFlagged(ByVal field As String) As Boolean
+    IsFlagged = mFlag.Exists(field)
+End Function
+
+Private Sub WarnMissing(ByVal field As String)
+    If Not IsFlagged(field) Then AddNote "信中找不到 " & FieldLabel(field) & "，" & MissingAction(field)
+End Sub
+
+' 讀不到時 Term 怎麼處理
+Private Function MissingAction(ByVal field As String) As String
+    Select Case field
+        Case "PRODUCT": MissingAction = "A2 預設填 FCN"
+        Case "TDCC": MissingAction = "B2 留空（可在 " & CELL_TDCC_INPUT & " 手填）"
+        Case "TRADE": MissingAction = "O5 填今天"
+        Case "ISSUE": MissingAction = "O6 由系統推算"
+        Case "FINAL": MissingAction = "O7 由系統推算"
+        Case "MATURITY": MissingAction = "O8 由系統推算"
+        Case "INITPRICE": MissingAction = "O9 留空"
+        Case Else: MissingAction = "留空"
+    End Select
+End Function
+
+Private Function FieldLabel(ByVal field As String) As String
+    Select Case field
+        Case "PRODUCT": FieldLabel = "Product"
+        Case "CURRENCY": FieldLabel = "Currency"
+        Case "GUAR": FieldLabel = "Guaranteed Period / Non-call"
+        Case "UL1", "UL2", "UL3", "UL4", "UL5", "UL6": FieldLabel = "標的 " & Mid$(field, 3)
+        Case "STRIKE": FieldLabel = "Strike"
+        Case "KOTYPE": FieldLabel = "KO Type"
+        Case "KOBARRIER": FieldLabel = "KO Barrier"
+        Case "COUPON": FieldLabel = "Coupon"
+        Case "PRICE": FieldLabel = "Note Price"
+        Case "UPFRONT": FieldLabel = "Upfront"
+        Case "TENOR": FieldLabel = "Tenor"
+        Case "PERIODS": FieldLabel = "No. of Periods"
+        Case "SETTLEFREQ": FieldLabel = "Settlement Frequency"
+        Case "BARRIERTYPE": FieldLabel = "Barrier Type"
+        Case "KI": FieldLabel = "KI"
+        Case "KOMEMORY": FieldLabel = "KO Memory"
+        Case "MEMAUTOCALL": FieldLabel = "Memory Autocall"
+        Case "DAILYKO": FieldLabel = "Daily KO"
+        Case "TRADE": FieldLabel = "Trade date"
+        Case "ISSUE": FieldLabel = "Issue date"
+        Case "FINAL": FieldLabel = "Final valuation date"
+        Case "MATURITY": FieldLabel = "Maturity date"
+        Case "TDCC": FieldLabel = "TDCC"
+        Case "INITPRICE": FieldLabel = "期初價格"
+        Case "PGRATE": FieldLabel = "PG rate"
+        Case Else: FieldLabel = field
+    End Select
+End Function
+
+Private Function PriLabel(ByVal pri As Long) As String
+    Select Case pri
+        Case PRI_TABLE: PriLabel = "表格"
+        Case PRI_PAIR: PriLabel = "左右一組"
+        Case Else: PriLabel = "標題: 數值"
+    End Select
+End Function
+
+Private Function ShowVal(ByVal v As Variant) As String
+    If VarType(v) = vbDate Then
+        ShowVal = Format$(v, "yyyy/mm/dd")
+    ElseIf IsError(v) Or IsEmpty(v) Then
+        ShowVal = ""
+    Else
+        ShowVal = CStr(v)
+    End If
+End Function
+
+Private Function ShowBlank(ByVal v As Variant) As String
+    If IsBlankVal(v) Then ShowBlank = "（空白）" Else ShowBlank = ShowVal(v)
 End Function
 
 '==================================================
@@ -460,22 +687,25 @@ Private Sub BuildHeaderMap()
     AddSyn "CURRENCY", "currency", "curr"
     AddSyn "GUAR", "guaranteedperiodsm", "guaranteedperiods", "noncallperiodsm", _
                    "noncallableperiods", "noncallm"
-    For i = 1 To 5
+    For i = 1 To 6
         AddSyn "UL" & i, "bbgcode" & i, "stock" & i, "underlying" & i
     Next i
     AddSyn "STRIKE", "strike", "putstrike"
     AddSyn "KOTYPE", "kotype"
     AddSyn "KOBARRIER", "kobarrier", "ko", "autocall"
     AddSyn "COUPON", "couponpa", "coupon"
-    AddSyn "PRICE", "upfrontnoteprice", "noteprice", "cost", "reoffer", "offerprice", "upfront"
-    AddSyn "TENOR", "tenorm", "tenor", "noofperiods"
+    AddSyn "PRICE", "upfrontnoteprice", "noteprice", "cost", "reoffer", "offerprice"
+    AddSyn "UPFRONT", "upfront"                  ' Citi 的 Upfront (%) 是 UF，不是票面價格
+    AddSyn "TENOR", "tenorm", "tenor"
+    AddSyn "PERIODS", "noofperiods"              ' SG
+    AddSyn "SETTLEFREQ", "settlementfrequency"   ' SG
     AddSyn "BARRIERTYPE", "barriertype", "putki?", "kitype"
     AddSyn "KI", "kibarrier", "putki", "ki"
     AddSyn "KOMEMORY", "komemory"
     AddSyn "MEMAUTOCALL", "memoryautocall"
     AddSyn "DAILYKO", "dailyko"
     AddSyn "TRADE", "tradedate", "strikedate", "initialvaluationdate"
-    AddSyn "ISSUE", "issuedate", "issuancedate", "issuedatetcalendardays"
+    AddSyn "ISSUE", "issuedate", "issuancedate", "issuedatetcalendardays"   ' MS 這欄填的是發行日
     AddSyn "FINAL", "finalvaluationdate", "finalfixingdate", "redemptionvaluationdate", "finalvaluation"
     AddSyn "MATURITY", "maturitydate", "redemptiondate", "finalmaturitydate"
     AddSyn "TDCC", "tdcc", "tdcccode"
@@ -490,7 +720,7 @@ Private Sub AddSyn(ByVal field As String, ParamArray keys() As Variant)
     Next k
 End Sub
 
-' 正規化：轉小寫，只留英數字與「?」（用來分辨 MS 的 "Put KI?" 與 "Put KI (%)"）
+' 正規化：轉小寫，只留英數與「?」（用來分辨 MS 的 "Put KI?" 與 "Put KI (%)"）
 Private Function NormKey(ByVal s As String) As String
     Dim i As Long, ch As String, out As String
     s = LCase$(s)
@@ -505,12 +735,24 @@ Private Function CellKey(ByVal v As Variant) As String
     If VarType(v) = vbString Then CellKey = NormKey(v)
 End Function
 
+' 空白、「-」、「N/A」、「NA」都算沒有值
 Private Function IsBlankVal(ByVal v As Variant) As Boolean
-    If IsError(v) Or IsEmpty(v) Then
+    Dim s As String
+    If IsError(v) Or IsEmpty(v) Or IsNull(v) Then
         IsBlankVal = True
-    Else
-        IsBlankVal = (Trim$(Replace(CStr(v), ChrW(160), " ")) = "" Or Trim$(CStr(v)) = "-")
+    ElseIf VarType(v) = vbString Then
+        s = LCase$(CollapseSpaces(v))
+        IsBlankVal = (s = "" Or s = "-" Or s = "n/a" Or s = "na")
     End If
+End Function
+
+' 不換行空白、全形空白換成一般空白，去頭尾並合併連續空白
+Private Function CollapseSpaces(ByVal s As String) As String
+    s = Trim$(Replace(Replace(s, ChrW(160), " "), ChrW(&H3000), " "))
+    Do While InStr(s, "  ") > 0
+        s = Replace(s, "  ", " ")
+    Loop
+    CollapseSpaces = s
 End Function
 
 '==================================================
@@ -583,9 +825,32 @@ End Function
 '==================================================
 ' 數值與文字正規化
 '==================================================
-' 支援：數字、" 20.00 "、"96.20%→96.15%"（取最後值）、"1m"
+' 改價寫法取最後的值：96.20%→96.15%、99.65->99.62、99.92 >> 99.89、99.92 > 99.89
+' 單一個 > 只在兩邊都是數字時算改價
+Private Function LatestText(ByVal s As String, ByRef revised As Boolean) As String
+    Dim arrow As String, p As Long
+    Dim before As String, after As String
+
+    arrow = ChrW(&H2192)
+    s = Replace(Replace(Replace(s, "->", arrow), "=>", arrow), ">>", arrow)
+    p = InStr(s, ">")
+    Do While p > 0
+        before = Replace(RTrim$(Left$(s, p - 1)), "%", "")
+        after = LTrim$(Mid$(s, p + 1))
+        If Right$(before, 1) Like "#" And Left$(after, 1) Like "#" Then
+            s = Left$(s, p - 1) & arrow & Mid$(s, p + 1)
+        End If
+        p = InStr(p + 1, s, ">")
+    Loop
+
+    p = InStrRev(s, arrow)
+    revised = (p > 0)
+    If revised Then LatestText = Trim$(Mid$(s, p + 1)) Else LatestText = s
+End Function
+
+' 支援：數字、" 20.00 "、"80%"、"1m"；hadPct 回傳是否帶 %
 Private Function ParseNumber(ByVal v As Variant, ByRef n As Double, ByRef hadPct As Boolean) As Boolean
-    Dim s As String, p As Long
+    Dim s As String
 
     hadPct = False
     Select Case VarType(v)
@@ -593,19 +858,27 @@ Private Function ParseNumber(ByVal v As Variant, ByRef n As Double, ByRef hadPct
             n = CDbl(v)
             ParseNumber = True
         Case vbString
-            s = Trim$(Replace(v, ChrW(160), " "))
-            p = InStrRev(s, ChrW(&H2192))   ' →
-            If p > 0 Then s = Trim$(Mid$(s, p + 1))
+            s = CollapseSpaces(v)
             hadPct = (InStr(s, "%") > 0)
             s = Replace(Replace(Replace(s, "%", ""), ",", ""), " ", "")
             If LCase$(Right$(s, 1)) = "m" Then s = Left$(s, Len(s) - 1)
-            If s = "" Or s Like "*[!0-9.-]*" Then Exit Function
+            If Not IsPlainNumber(s) Then Exit Function
             n = Val(s)
             ParseNumber = True
     End Select
 End Function
 
-' 支援：日期值、yyyy-mm-dd、yyyy/mm/dd、dd/mm/yyyy（HSBC），後面可帶時間
+' -?數字(.數字)?
+Private Function IsPlainNumber(ByVal s As String) As Boolean
+    If Left$(s, 1) = "-" Then s = Mid$(s, 2)
+    If s = "" Or s Like "*[!0-9.]*" Then Exit Function
+    If Len(s) - Len(Replace(s, ".", "")) > 1 Then Exit Function
+    If Left$(s, 1) = "." Or Right$(s, 1) = "." Then Exit Function
+    IsPlainNumber = True
+End Function
+
+' 支援：日期值、yyyy-mm-dd、yyyy/mm/dd、dd/mm/yyyy（HSBC）、20Oct26、15-Oct-26、20-Oct-2026、
+' 20 Oct 2026；數字格式的日期後面可帶時間
 Private Function ParseDateVal(ByVal v As Variant, ByRef d As Date) As Boolean
     Dim s As String, p() As String
     Dim y As Long, m As Long, dd As Long
@@ -617,7 +890,12 @@ Private Function ParseDateVal(ByVal v As Variant, ByRef d As Date) As Boolean
     End If
     If VarType(v) <> vbString Then Exit Function
 
-    s = Trim$(v)
+    s = CollapseSpaces(v)
+    If ParseMonthNameDate(s, d) Then
+        ParseDateVal = True
+        Exit Function
+    End If
+
     If InStr(s, " ") > 0 Then s = Left$(s, InStr(s, " ") - 1)
     s = Replace(Replace(s, "-", "/"), ".", "/")
     p = Split(s, "/")
@@ -635,6 +913,39 @@ Private Function ParseDateVal(ByVal v As Variant, ByRef d As Date) As Boolean
 
     d = DateSerial(y, m, dd)
     ParseDateVal = (Month(d) = m And Day(d) = dd)
+End Function
+
+' 日 + 英文月份縮寫 + 2 或 4 位年：20Oct26、15-Oct-26、20-Oct-2026、20 Oct 2026
+Private Function ParseMonthNameDate(ByVal s As String, ByRef d As Date) As Boolean
+    Dim t As String, i As Long, pos As Long
+    Dim dayPart As String, monPart As String, yearPart As String
+    Dim y As Long, m As Long, dd As Long
+
+    t = Replace(Replace(s, "-", ""), " ", "")
+    For i = 1 To Len(t)
+        If Mid$(t, i, 1) Like "[A-Za-z]" Then
+            pos = i
+            Exit For
+        End If
+    Next i
+    If pos < 2 Or pos > 3 Then Exit Function
+
+    dayPart = Left$(t, pos - 1)
+    monPart = LCase$(Mid$(t, pos, 3))
+    yearPart = Mid$(t, pos + 3)
+    If dayPart Like "*[!0-9]*" Or Len(monPart) <> 3 Then Exit Function
+    If Not (yearPart Like "##" Or yearPart Like "####") Then Exit Function
+
+    m = InStr("janfebmaraprmayjunjulaugsepoctnovdec", monPart)
+    If m = 0 Or (m - 1) Mod 3 <> 0 Then Exit Function
+    m = (m - 1) \ 3 + 1
+    dd = CLng(dayPart)
+    y = CLng(yearPart)
+    If y < 100 Then y = y + 2000
+    If dd < 1 Or dd > 31 Then Exit Function
+
+    d = DateSerial(y, m, dd)
+    ParseMonthNameDate = (Month(d) = m And Day(d) = dd)
 End Function
 
 ' TDCC：只留數字；Excel 吃掉開頭 0 時補回 12 碼；不是 12 碼就當作沒有
@@ -675,71 +986,106 @@ Private Function NormProduct(ByVal v As Variant) As String
     NormProduct = s
 End Function
 
-' KO Type 對應到 Variable!C：Daily Memory / Daily / Period End / Period End Memory
-' MS：KO Type = OBSERVATION 搭配 KO Memory；Citi：沒有 KO Type，由 Memory Autocall / Daily KO 推得
+' KO Type 對應到 Variable!C：Daily / Daily Memory / Period End / Period End Memory（不分大小寫）
+' MS：OBSERVATION = 每期，由 KO Memory（Yes / No）決定是否記憶式
+' Citi：沒有 KO Type，由 Daily KO（每日觀察）、Memory Autocall（記憶式）兩欄 TRUE / FALSE 判斷
+' 認不得或互相矛盾時留空並提醒
 Private Function NormKOType(ByVal koType As Variant, ByVal koMemory As Variant, _
                             ByVal memAutocall As Variant, ByVal dailyKO As Variant) As String
-    Dim s As String
+    Dim s As String, base As String, mem As String
     Dim isDaily As Boolean, isMemory As Boolean
 
-    s = LCase$(Trim$(CStr(koType)))
+    s = LCase$(CollapseSpaces(CStr(koType)))
     If s = "" Then
         If IsBlankVal(memAutocall) And IsBlankVal(dailyKO) Then Exit Function
-        isDaily = IsYes(dailyKO)
-        isMemory = IsYes(memAutocall)
-    Else
-        isDaily = (InStr(s, "daily") > 0)
-        isMemory = (InStr(s, "memory") > 0) Or IsYes(koMemory)
-        If Not isDaily And InStr(s, "period") = 0 And InStr(s, "observation") = 0 And Not isMemory Then
-            NormKOType = Trim$(CStr(koType))
+        If Not ParseFlag(dailyKO, isDaily) Or Not ParseFlag(memAutocall, isMemory) Then
+            FlagField "KOTYPE", "Daily KO／Memory Autocall 認不得：" & ShowBlank(dailyKO) & "／" & _
+                                ShowBlank(memAutocall) & "，L2 留空"
             Exit Function
         End If
+        If isDaily Then base = "Daily" Else base = "Period End"
+        If isMemory Then NormKOType = base & " Memory" Else NormKOType = base
+        Exit Function
     End If
 
-    If isDaily Then
-        NormKOType = IIf(isMemory, "Daily Memory", "Daily")
+    Select Case s
+        Case "daily": base = "Daily"
+        Case "daily memory": base = "Daily Memory"
+        Case "period end": base = "Period End"
+        Case "period end memory": base = "Period End Memory"
+        Case "observation": base = "Period End"   ' MS：每期觀察
+        Case Else
+            FlagField "KOTYPE", "KO Type 認不得：" & ShowVal(koType) & "，L2 留空"
+            Exit Function
+    End Select
+
+    mem = LCase$(CollapseSpaces(CStr(koMemory)))
+    If mem = "" Then
+        If s = "observation" Then
+            FlagField "KOTYPE", "KO Type 是 OBSERVATION，但 KO Memory 是空白，L2 留空"
+        Else
+            NormKOType = base
+        End If
+    ElseIf mem = "yes" Or mem = "y" Then
+        NormKOType = Replace(base, " Memory", "") & " Memory"
+    ElseIf mem = "no" Or mem = "n" Then
+        If Right$(base, 7) = " Memory" Then
+            FlagField "KOTYPE", "KO Type 是 " & ShowVal(koType) & "，但 KO Memory 是 " & ShowVal(koMemory) & "，L2 留空"
+        Else
+            NormKOType = base
+        End If
     Else
-        NormKOType = IIf(isMemory, "Period End Memory", "Period End")
+        FlagField "KOTYPE", "KO Memory 認不得：" & ShowVal(koMemory) & "，L2 留空"
     End If
 End Function
 
-Private Function IsYes(ByVal v As Variant) As Boolean
+' TRUE / FALSE（Excel 的布林值或文字）
+Private Function ParseFlag(ByVal v As Variant, ByRef b As Boolean) As Boolean
     Dim s As String
     If VarType(v) = vbBoolean Then
-        IsYes = v
-    ElseIf Not IsError(v) Then
-        s = UCase$(Trim$(CStr(v)))
-        IsYes = (s = "TRUE" Or s = "YES" Or s = "Y")
+        b = v
+        ParseFlag = True
+    ElseIf VarType(v) = vbString Then
+        s = LCase$(CollapseSpaces(v))
+        If s = "true" Or s = "false" Then
+            b = (s = "true")
+            ParseFlag = True
+        End If
     End If
 End Function
 
-' Barrier Type 對應到 AKI / MKI / EKI / NONE
+' Barrier Type 對應到 AKI / MKI / EKI / NONE；認不得時留空並提醒
 Private Function NormBarrierType(ByVal v As Variant) As String
     Dim s As String
-    s = UCase$(Trim$(CStr(v)))
+    s = UCase$(CollapseSpaces(CStr(v)))
     Select Case s
+        Case ""
         Case "AKI", "MKI", "EKI", "NONE"
             NormBarrierType = s
-        Case "EUROPEAN"
+        Case "EUROPEAN", "AT MATURITY"   ' MS、SG
             NormBarrierType = "EKI"
         Case "AMERICAN"
             NormBarrierType = "AKI"
-        Case "N/A", "NA", "NO", "NIL"
+        Case "NO", "NIL"
             NormBarrierType = "NONE"
-        Case ""
-            NormBarrierType = ""
         Case Else
-            NormBarrierType = s
+            FlagField "BARRIERTYPE", "Barrier Type 認不得：" & ShowVal(v) & "，R2 留空"
     End Select
 End Function
 
+' 期初價格：Opening → 開盤價；Closing → 收盤價；VWAP → VWAP
 Private Function NormInitPrice(ByVal v As Variant) As String
     Dim s As String
-    s = LCase$(CStr(v))
+    s = LCase$(CollapseSpaces(CStr(v)))
+    If s = "" Then Exit Function
     If InStr(s, "open") > 0 Then
         NormInitPrice = "開盤價"
     ElseIf InStr(s, "clos") > 0 Then
         NormInitPrice = "收盤價"
+    ElseIf InStr(s, "vwap") > 0 Then
+        NormInitPrice = "VWAP"
+    Else
+        FlagField "INITPRICE", "期初價格認不得：" & ShowVal(v) & "，O9 留空"
     End If
 End Function
 
