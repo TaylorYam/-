@@ -165,6 +165,7 @@ Private Function CompareTerm(ByVal wsT As Worksheet, ByVal tc As Variant) As Str
         End If
     Next i
     out = out & CompareCell(wsT.Range("Q2"), "M")
+    out = out & CompareCell(wsT.Range("V2"), IIf(tc(2) = "FCN", 0, ""))
     CompareTerm = out
 End Function
 
@@ -424,6 +425,32 @@ Public Function Test_OrderFill_RulesReport() As String
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("K2"), "") & ExpectNote(report, "Strike 格式不認得：98,50%")
     Tally "Strike 逗號當小數點（98,50%）→ 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsT.Range("V2").Value = 5
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("V2"), 0)
+    Tally "Product 是 FCN → V2（Floor Coupon）填 0", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A10"), "FCN_Stepdown"
+    wsT.Range("V2").Value = 0
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "FCN_Stepdown") & CompareCell(wsT.Range("V2"), "")
+    Tally "Product 是 FCN_Stepdown → V2 清空", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("A9:A10").ClearContents
+    wsT.Range("V2").Value = 0
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & CompareCell(wsT.Range("V2"), "")
+    Tally "沒有 Product、A2 留空 → V2 清空", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    wsT.Range("V2").ClearContents
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "FCN") & CompareCell(wsT.Range("V2"), 0)
+    Tally "SG 推定為 FCN → V2 填 0", fails, passCount, total, detail
 
     PasteBase wsP
     wsP.Range("Q9").Value = "BBG Code 6"

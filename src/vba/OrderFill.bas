@@ -4,7 +4,7 @@ Option Explicit
 '==================================================
 ' 起單回填
 ' 把上手回覆的起單信件貼到「起單回填」工作表，
-' 按「填入」回填 Term!A2:T2 與 Term!O5:O9；按「清空」清掉貼上區。
+' 按「填入」回填 Term!A2:T2、V2 與 Term!O5:O9；按「清空」清掉貼上區。
 '
 ' 找值方式：依表頭名稱（不依欄位位置），支援三種排法
 '   1. 表格：一列表頭、下一列數值（大部分上手）
@@ -257,6 +257,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Application.EnableEvents = False
 
     wsT.Range("A2:T2").ClearContents
+    wsT.Range("V2").ClearContents
     wsT.Range("O5:O9").ClearContents
 
     wsT.Range("A2").Value = product
@@ -277,6 +278,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     wsT.Range("R2").Value = barrierType
     wsT.Range("S2").Value = ki
     wsT.Range("T2").Value = pgRate
+    If product = "FCN" Then wsT.Range("V2").Value = 0   ' Floor Coupon：FCN 固定 0，其他產品留空
 
     wsT.Range("O5").Value = Format$(tradeDate, "yyyy/mm/dd")
     wsT.Range("O9").Value = initPrice

@@ -8,7 +8,7 @@
 
 ## 繁體中文
 
-把上手回覆的起單信件貼到「起單回填」工作表，按「填入」回填 `Term!A2:T2` 與 `Term!O5:O9`；按「清空」清掉貼上區，再貼下一封。原始碼在 `src/vba/`。
+把上手回覆的起單信件貼到「起單回填」工作表，按「填入」回填 `Term!A2:T2`、`V2` 與 `Term!O5:O9`；按「清空」清掉貼上區，再貼下一封。原始碼在 `src/vba/`。
 
 ### 安裝
 
@@ -60,11 +60,12 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - Citi 特例：Guaranteed Period = Non Callable Periods + 1。
 - 標的超過 5 檔時提醒（`Term` 只放得下 5 檔）。
 - 信中沒有 Product 時不預設，A2 留空並提醒。只有 SG 例外：`Fixed Coupons` 是 `All Periods`、`AutoCall` 是單一數字、而且有 `Put Strike`，三項都符合時推定為 `FCN`，並提醒確認。目前只有一封 SG 的 FCN 樣本，無法確認 SG 其他類似產品（例如 `FCN_Stepdown`）的信不會也符合條件，所以推定後請一定核對 A2。
+- Floor Coupon（V2）：A2 是 `FCN`（包含 SG 推定、Citi 的 `FCA`）時填 0；其他產品（包含 `FCN_Stepdown` 等變體）或 A2 留空時清空，避免上一筆的值留到下一筆。
 - 信中沒有 Trade date 時 O5 填今天。
 - Issue／Final／Maturity date 沒有時，沿用 `Term` 既有邏輯推算，並提醒。
 - 期初價格：Opening → 開盤價；Closing → 收盤價；VWAP → VWAP；其他寫法留空並提醒。
 - 回填時會暫停 `Term` 的事件，避免信裡的日期被重算覆蓋。之後只重新觸發 D2、P2，讓「產品名稱」的幣別與期間跟著更新。
-- 不會動到 `Term!U2:V2`、`Q6`、`O10`。
+- 不會動到 `Term!U2`、`Q6`、`O10`。
 
 ### 測試
 
@@ -80,7 +81,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 ## English
 
-Paste an issuer's order reply mail into the `起單回填` sheet and press **填入** (Fill) to populate `Term!A2:T2` and `Term!O5:O9`. Press **清空** (Clear) to clear the paste area before pasting the next mail. Source code is in `src/vba/`.
+Paste an issuer's order reply mail into the `起單回填` sheet and press **填入** (Fill) to populate `Term!A2:T2`, `V2`, and `Term!O5:O9`. Press **清空** (Clear) to clear the paste area before pasting the next mail. Source code is in `src/vba/`.
 
 ### Installation
 
@@ -132,11 +133,12 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - Citi special case: Guaranteed Period = Non Callable Periods + 1.
 - More than 5 underlyings triggers a warning (`Term` holds only 5).
 - When the mail has no Product, nothing is assumed: A2 is left blank with a warning. SG is the only exception: when `Fixed Coupons` is `All Periods`, `AutoCall` is a single number, and there is a `Put Strike`, the product is inferred as `FCN` with a warning to confirm it. Only one SG FCN sample is available, so it is not known whether mails for similar SG products (such as `FCN_Stepdown`) also meet these conditions; always check A2 after an inference.
+- Floor Coupon (V2): 0 when A2 is `FCN` (including the SG inference and Citi's `FCA`); cleared for any other product (including variants such as `FCN_Stepdown`) or when A2 is blank, so a previous trade's value is not carried over.
 - When the mail has no Trade date, O5 is set to today.
 - Missing Issue / Final / Maturity dates are calculated by the existing `Term` logic, with a warning.
 - Initial price: Opening → 開盤價; Closing → 收盤價; VWAP → VWAP; any other value is left blank with a warning.
 - `Term` events are suspended while writing, so mail dates are not overwritten by recalculation. Only D2 and P2 are re-triggered afterward, so the currency and tenor shown on `產品名稱` stay in sync.
-- `Term!U2:V2`, `Q6`, and `O10` are not changed.
+- `Term!U2`, `Q6`, and `O10` are not changed.
 
 ### Testing
 
