@@ -408,6 +408,24 @@ Public Function Test_OrderFill_RulesReport() As String
     Tally "SG：沒有 Put Strike → A2 留空並提醒", fails, passCount, total, detail
 
     PasteBase wsP
+    PutText wsP.Range("G10"), "105%, 100%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("M2"), "") & ExpectNote(report, "KO Barrier 格式不認得：105%, 100%")
+    Tally "KO Barrier 用逗號列出多個值 → 留空並提醒（不讀成 105100）", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    PutText wsP.Range("G10"), "105%, 100%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & ExpectNote(report, "找不到 Product，A2 留空")
+    Tally "SG：AutoCall 是 105%, 100% → 不推定 FCN", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("E10"), "98,50%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), "") & ExpectNote(report, "Strike 格式不認得：98,50%")
+    Tally "Strike 逗號當小數點（98,50%）→ 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
     wsP.Range("Q9").Value = "BBG Code 6"
     PutText wsP.Range("Q10"), "AAPL UW"
     fails = RunFill(report)
