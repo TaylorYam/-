@@ -58,7 +58,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - Note Price：沒有 Note Price、只有 `Upfront (%)`（Citi）時，Note Price = 100 − Upfront。
 - Citi 特例：Guaranteed Period = Non Callable Periods + 1。
 - 標的超過 5 檔時提醒（`Term` 只放得下 5 檔）。
-- 信中沒有 Product 時預設 `FCN`（例：SG），並提醒。
+- 信中沒有 Product 時不預設，A2 留空並提醒。只有 SG 例外：`Fixed Coupons` 是 `All Periods`、`AutoCall` 是單一數字、而且有 `Put Strike`，三項都符合時推定為 `FCN`，並提醒確認。目前只有一封 SG 的 FCN 樣本，無法確認 SG 其他類似產品（例如 `FCN_Stepdown`）的信不會也符合條件，所以推定後請一定核對 A2。
 - 信中沒有 Trade date 時 O5 填今天。
 - Issue／Final／Maturity date 沒有時，沿用 `Term` 既有邏輯推算，並提醒。
 - 期初價格：Opening → 開盤價；Closing → 收盤價；VWAP → VWAP；其他寫法留空並提醒。
@@ -129,7 +129,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - Note Price: when there is no Note Price but only `Upfront (%)` (Citi), Note Price = 100 − Upfront.
 - Citi special case: Guaranteed Period = Non Callable Periods + 1.
 - More than 5 underlyings triggers a warning (`Term` holds only 5).
-- When the mail has no Product, `FCN` is used (for example, SG) and a warning is shown.
+- When the mail has no Product, nothing is assumed: A2 is left blank with a warning. SG is the only exception: when `Fixed Coupons` is `All Periods`, `AutoCall` is a single number, and there is a `Put Strike`, the product is inferred as `FCN` with a warning to confirm it. Only one SG FCN sample is available, so it is not known whether mails for similar SG products (such as `FCN_Stepdown`) also meet these conditions; always check A2 after an inference.
 - When the mail has no Trade date, O5 is set to today.
 - Missing Issue / Final / Maturity dates are calculated by the existing `Term` logic, with a warning.
 - Initial price: Opening → 開盤價; Closing → 收盤價; VWAP → VWAP; any other value is left blank with a warning.

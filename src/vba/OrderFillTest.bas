@@ -379,6 +379,35 @@ Public Function Test_OrderFill_RulesReport() As String
     Tally "SG：Settlement Frequency 不是 Monthly → Tenor 留空並提醒", fails, passCount, total, detail
 
     PasteBase wsP
+    wsP.Range("A9:A10").ClearContents
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & ExpectNote(report, "找不到 Product，A2 留空")
+    Tally "非 SG 沒有 Product → A2 留空並提醒（不預設 FCN）", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "FCN") & ExpectNote(report, "推定為 FCN")
+    Tally "SG 沒有 Product、條件都符合 → 推定 FCN 並提醒", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    PutText wsP.Range("Q10"), "Coupon Barrier"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & ExpectNote(report, "找不到 Product，A2 留空")
+    Tally "SG：Fixed Coupons 不是 All Periods → A2 留空並提醒", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    PutText wsP.Range("G10"), "105%/100%/95%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & ExpectNote(report, "找不到 Product，A2 留空")
+    Tally "SG：AutoCall 不是單一數字 → A2 留空並提醒", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    wsP.Range("E9:E10").ClearContents
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & ExpectNote(report, "找不到 Product，A2 留空")
+    Tally "SG：沒有 Put Strike → A2 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
     wsP.Range("Q9").Value = "BBG Code 6"
     PutText wsP.Range("Q10"), "AAPL UW"
     fails = RunFill(report)
@@ -439,6 +468,17 @@ Private Sub PasteBase(ByVal ws As Worksheet, Optional ByVal pickIssuer As Boolea
             ws.Cells(10, i + 1).Value = values(i)
         End If
     Next i
+End Sub
+
+' SG 的寫法：沒有 Product，E 欄 Put Strike、G 欄 AutoCall，Q 欄 Fixed Coupons = All Periods
+Private Sub PasteSGNoProduct(ByVal ws As Worksheet)
+    PasteBase ws
+    ws.Range("C3").Value = "SG"
+    ws.Range("A9:A10").ClearContents
+    ws.Range("E9").Value = "Put Strike"
+    ws.Range("G9").Value = "AutoCall"
+    ws.Range("Q9").Value = "Fixed Coupons"
+    PutText ws.Range("Q10"), "All Periods"
 End Sub
 
 ' 寫成文字，避免 Excel 自動轉成日期或數字

@@ -152,10 +152,6 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
 
     '--- 整理各欄位 ---
     product = NormProduct(GetVal("PRODUCT"))
-    If product = "" Then
-        product = "FCN"
-        WarnMissing "PRODUCT"
-    End If
 
     ccy = UCase$(Trim$(CStr(GetVal("CURRENCY"))))
 
@@ -175,6 +171,18 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     coupon = NumField("COUPON", 1)
     ki = NumField("KI", 3)
     pgRate = NumField("PGRATE", 0)
+
+    ' 信中沒有 Product 時不預設；只有 SG 每期固定配息、AutoCall 是單一數字、有 Put Strike 時推定為 FCN
+    If product = "" Then
+        If issuer = "SG" And LCase$(CollapseSpaces(CStr(GetVal("FIXEDCPN")))) = "all periods" _
+           And Not IsEmpty(koBarrier) And Not IsEmpty(strike) Then
+            product = "FCN"
+            AddNote "信中沒有 Product，依 SG 條件（Fixed Coupons 是 All Periods、AutoCall 是單一數字、" & _
+                    "有 Put Strike）推定為 FCN，A2 請確認"
+        Else
+            WarnMissing "PRODUCT"
+        End If
+    End If
 
     tenor = NumField("TENOR", 0)
     If IsEmpty(tenor) And Not IsFlagged("TENOR") Then
@@ -610,7 +618,7 @@ End Sub
 ' 讀不到時 Term 怎麼處理
 Private Function MissingAction(ByVal field As String) As String
     Select Case field
-        Case "PRODUCT": MissingAction = "A2 預設填 FCN"
+        Case "PRODUCT": MissingAction = "A2 留空"
         Case "TDCC": MissingAction = "B2 留空（可在 " & CELL_TDCC_INPUT & " 手填）"
         Case "TRADE": MissingAction = "O5 填今天"
         Case "ISSUE": MissingAction = "O6 由系統推算"
@@ -636,6 +644,7 @@ Private Function FieldLabel(ByVal field As String) As String
         Case "TENOR": FieldLabel = "Tenor"
         Case "PERIODS": FieldLabel = "No. of Periods"
         Case "SETTLEFREQ": FieldLabel = "Settlement Frequency"
+        Case "FIXEDCPN": FieldLabel = "Fixed Coupons"
         Case "BARRIERTYPE": FieldLabel = "Barrier Type"
         Case "KI": FieldLabel = "KI"
         Case "KOMEMORY": FieldLabel = "KO Memory"
@@ -699,6 +708,7 @@ Private Sub BuildHeaderMap()
     AddSyn "TENOR", "tenorm", "tenor"
     AddSyn "PERIODS", "noofperiods"              ' SG
     AddSyn "SETTLEFREQ", "settlementfrequency"   ' SG
+    AddSyn "FIXEDCPN", "fixedcoupons"            ' SG，用來推定 Product
     AddSyn "BARRIERTYPE", "barriertype", "putki?", "kitype"
     AddSyn "KI", "kibarrier", "putki", "ki"
     AddSyn "KOMEMORY", "komemory"
