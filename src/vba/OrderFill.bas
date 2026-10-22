@@ -859,6 +859,7 @@ Private Function LatestText(ByVal s As String, ByRef revised As Boolean) As Stri
 End Function
 
 ' 支援：數字、" 20.00 "、"80%"、"1m"；hadPct 回傳是否帶 %
+' 有逗號的不認（"105%, 100%" 是列出多個值、"98,50%" 是逗號當小數點）；這些欄位不會用到千分位
 Private Function ParseNumber(ByVal v As Variant, ByRef n As Double, ByRef hadPct As Boolean) As Boolean
     Dim s As String
 
@@ -870,7 +871,7 @@ Private Function ParseNumber(ByVal v As Variant, ByRef n As Double, ByRef hadPct
         Case vbString
             s = CollapseSpaces(v)
             hadPct = (InStr(s, "%") > 0)
-            s = Replace(Replace(Replace(s, "%", ""), ",", ""), " ", "")
+            s = Replace(Replace(s, "%", ""), " ", "")
             If LCase$(Right$(s, 1)) = "m" Then s = Left$(s, Len(s) - 1)
             If Not IsPlainNumber(s) Then Exit Function
             n = Val(s)
