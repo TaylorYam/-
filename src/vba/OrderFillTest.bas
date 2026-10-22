@@ -165,7 +165,6 @@ Private Function CompareTerm(ByVal wsT As Worksheet, ByVal tc As Variant) As Str
         End If
     Next i
     out = out & CompareCell(wsT.Range("Q2"), "M")
-    out = out & CompareCell(wsT.Range("V2"), IIf(tc(2) = "FCN", 0, ""))
     CompareTerm = out
 End Function
 
@@ -427,27 +426,27 @@ Public Function Test_OrderFill_RulesReport() As String
     Tally "Strike 逗號當小數點（98,50%）→ 留空並提醒", fails, passCount, total, detail
 
     PasteBase wsP
-    wsT.Range("V2").Value = 5
+    SetTermCell wsT.Range("V2"), 5
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("V2"), 0)
     Tally "Product 是 FCN → V2（Floor Coupon）填 0", fails, passCount, total, detail
 
     PasteBase wsP
     PutText wsP.Range("A10"), "FCN_Stepdown"
-    wsT.Range("V2").Value = 0
+    SetTermCell wsT.Range("V2"), 0
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "FCN_Stepdown") & CompareCell(wsT.Range("V2"), "")
     Tally "Product 是 FCN_Stepdown → V2 清空", fails, passCount, total, detail
 
     PasteBase wsP
     wsP.Range("A9:A10").ClearContents
-    wsT.Range("V2").Value = 0
+    SetTermCell wsT.Range("V2"), 0
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & CompareCell(wsT.Range("V2"), "")
     Tally "沒有 Product、A2 留空 → V2 清空", fails, passCount, total, detail
 
     PasteSGNoProduct wsP
-    wsT.Range("V2").ClearContents
+    SetTermCell wsT.Range("V2"), Empty
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "FCN") & CompareCell(wsT.Range("V2"), 0)
     Tally "SG 推定為 FCN → V2 填 0", fails, passCount, total, detail
@@ -475,10 +474,11 @@ Public Function Test_OrderFill_RulesReport() As String
 
     PasteBase wsP
     PutText wsP.Range("C5"), "12345"
+    SetTermCell wsT.Range("V2"), 5
     ok = OrderFill_Run(True, report)
-    fails = ExpectNote(report, "12 碼")
+    fails = ExpectNote(report, "12 碼") & CompareCell(wsT.Range("V2"), 5)
     If ok Then fails = fails & "  應該不填入" & vbCrLf
-    Tally "C5 不是 12 碼 → 不填入", fails, passCount, total, detail
+    Tally "C5 不是 12 碼 → 不填入（V2 不變）", fails, passCount, total, detail
 
     PasteBase wsP
     PutText wsP.Range("C5"), "29000000000"
@@ -486,6 +486,20 @@ Public Function Test_OrderFill_RulesReport() As String
     fails = ExpectNote(report, "12 碼")
     If ok Then fails = fails & "  應該不填入（11 碼不補 0）" & vbCrLf
     Tally "C5 只有 11 碼 → 不填入", fails, passCount, total, detail
+
+    PasteBase wsP, False
+    SetTermCell wsT.Range("V2"), 5
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "判斷不出是哪一家上手") & CompareCell(wsT.Range("V2"), 5)
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "判斷不出上手 → 不填入（V2 不變）", fails, passCount, total, detail
+
+    OrderFill_Clear
+    SetTermCell wsT.Range("V2"), 5
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "貼上區沒有資料") & CompareCell(wsT.Range("V2"), 5)
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "貼上區沒有資料 → 不填入（V2 不變）", fails, passCount, total, detail
 
     OrderFill_Clear
     Test_OrderFill_RulesReport = "RULES PASS " & passCount & "/" & total & vbCrLf & detail
@@ -524,6 +538,16 @@ Private Sub PasteSGNoProduct(ByVal ws As Worksheet)
     ws.Range("G9").Value = "AutoCall"
     ws.Range("Q9").Value = "Fixed Coupons"
     PutText ws.Range("Q10"), "All Periods"
+End Sub
+
+' 直接改 Term 的格子時暫停事件，避免觸發 Term 的 Worksheet_Change（例如跳選 O5）
+Private Sub SetTermCell(ByVal cell As Range, ByVal v As Variant)
+    Dim prevEvents As Boolean
+
+    prevEvents = Application.EnableEvents
+    Application.EnableEvents = False
+    cell.Value = v
+    Application.EnableEvents = prevEvents
 End Sub
 
 ' 寫成文字，避免 Excel 自動轉成日期或數字
