@@ -451,6 +451,17 @@ Public Function Test_OrderFill_RulesReport() As String
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "FCN") & CompareCell(wsT.Range("V2"), 0)
     Tally "SG 推定為 FCN → V2 填 0", fails, passCount, total, detail
 
+    ' SG 的 Quote ? 欄值是 "Strike"：數值列的值不能當成左右一組的標題（#14）
+    PasteSGNoProduct wsP
+    wsP.Range("R9").Value = "Quote ?"
+    PutText wsP.Range("R10"), "Strike"
+    wsP.Range("S9").Value = "Coupon p.a."
+    wsP.Range("S10").Value = 12
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), 80) & CompareCell(wsT.Range("A2"), "FCN")
+    If InStr(report, "Strike 不一致") > 0 Then fails = fails & "  不應出現 Strike 不一致：" & Replace(report, vbCrLf, " ") & vbCrLf
+    Tally "SG 的 Quote ? 是 Strike → 不當成標題，Strike 照表格、推定 FCN", fails, passCount, total, detail
+
     PasteBase wsP
     wsP.Range("Q9").Value = "BBG Code 6"
     PutText wsP.Range("Q10"), "AAPL UW"

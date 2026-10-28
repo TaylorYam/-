@@ -433,7 +433,7 @@ End Function
 Private Sub CollectFields(ByRef data As Variant)
     Dim nR As Long, nC As Long
     Dim r As Long, c As Long, r2 As Long
-    Dim isHeader() As Boolean
+    Dim isHeader() As Boolean, isValueRow() As Boolean
     Dim cnt As Long, valueRow As Long
     Dim key As String, s As String
     Dim segs As Variant, seg As Variant, k As Variant
@@ -449,6 +449,7 @@ Private Sub CollectFields(ByRef data As Variant)
     nR = UBound(data, 1)
     nC = UBound(data, 2)
     ReDim isHeader(1 To nR)
+    ReDim isValueRow(1 To nR)
 
     '--- 1. 表格：一列有 3 個以上認得的表頭，就找下一列的數值 ---
     For r = 1 To nR
@@ -471,6 +472,7 @@ Private Sub CollectFields(ByRef data As Variant)
             Next r2
 
             If valueRow > 0 Then
+                isValueRow(valueRow) = True
                 For c = 1 To nC
                     key = CellKey(data(r, c))
                     If mHeaderMap.Exists(key) Then RecordField mHeaderMap(key), data(valueRow, c), PRI_TABLE
@@ -480,13 +482,14 @@ Private Sub CollectFields(ByRef data As Variant)
     Next r
 
     '--- 2. 左右一組、3.「標題: 數值」（一格裡有好幾組 [ 標題: 數值 ] 時逐組拆開）---
+    ' 表格的數值列不做左右一組：SG 的 Quote ? 欄值是 "Strike"，會把右邊的 Coupon 當成 Strike
     For r = 1 To nR
         If Not isHeader(r) Then
             For c = 1 To nC
                 If VarType(data(r, c)) = vbString Then
                     s = Trim$(data(r, c))
                     key = NormKey(s)
-                    If mHeaderMap.Exists(key) And c < nC Then
+                    If mHeaderMap.Exists(key) And c < nC And Not isValueRow(r) Then
                         If Not IsBlankVal(data(r, c + 1)) Then RecordField mHeaderMap(key), data(r, c + 1), PRI_PAIR
                     End If
 
