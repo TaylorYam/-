@@ -64,7 +64,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - MS 的 DACN 信 Product 寫 `Range Accrual`：有 Strike（MS 的 `Put Strike`）時判定為 `DACN`，並提醒確認 A2；沒有 Strike 時照填 `Range Accrual`。其他上手的 `Range Accrual` 照填。
 - `Accrual Barrier`（MS 的 DACN）在 `Term` 沒有對應欄位：和 Strike 不同時提醒，K2 仍填 Strike。
 - FCN_Express：E2（Guaranteed Period）固定填 0，信裡有不是 0 的值時提醒。`First Period Rebate Multiplier`（BARC）／`Express Multiplier`（CA）在 `Term` 沒有對應欄位，值不是 1 時提醒。
-- Super Bull：L2（KO Type）固定填 `Period End`；沒有 KI，R2、S2 留空，也不提醒找不到 Barrier Type、KI。E2、K2、M2、N2 讀以下表頭，只在 Product 是 Super Bull 時才讀（BARC 的 DACN 信也有 `Autocall Barrier`，不會被當成 KO Barrier）：
+- Super Bull：L2（KO Type）固定填 `Period End`；沒有 KI，R2、S2 留空，也不提醒找不到 Barrier Type、KI。E2、K2、M2、N2 讀以下表頭，只在 Product 是 Super Bull 時才讀（BARC 的 DACN／Express 信也有 `Autocall Barrier`，不會被當成 KO Barrier）：
   - BNP（其他上手比照 BNP）：E2 ← `Autocall Frequency(M)`，K2、M2 ← `Super Bull Level (%)`，N2 ← `Autocall Coupon Flat (%)`。
   - HSBC、CA：E2 ← `Autocall Freq (m)`（CA 另一種寫法是 `Autocall Date(one-time)`，例：`3M` → 3），K2 ← `Strike (%)`，M2 ← `Autocall Barrier (%)`，N2 ← `Bonus Coupon (%,flat)`（CA 另一種寫法是 `Autocall Flat Coupon (%)`）。
   - 其他欄位（Currency、標的、Note Price、Tenor、PG rate、日期、期初價格）和 FCN 相同。
@@ -146,7 +146,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - MS writes `Range Accrual` as the Product of a DACN mail: when there is a Strike (MS's `Put Strike`), the product is taken as `DACN` with a warning to confirm A2; without a Strike, `Range Accrual` is written as is. `Range Accrual` from other issuers is written as is.
 - `Accrual Barrier` (MS's DACN) has no column in `Term`: a warning appears when it differs from Strike, and K2 still gets Strike.
 - FCN_Express: E2 (Guaranteed Period) is always 0, with a warning when the mail has a non-zero value. `First Period Rebate Multiplier` (BARC) / `Express Multiplier` (CA) has no column in `Term`; a value other than 1 triggers a warning.
-- Super Bull: L2 (KO Type) is always `Period End`. There is no KI, so R2 and S2 stay blank and no missing Barrier Type or KI warning is shown. E2, K2, M2, and N2 come from the headers below, which are read only when Product is Super Bull (BARC's DACN mails also have `Autocall Barrier`, and it is not taken as the KO Barrier):
+- Super Bull: L2 (KO Type) is always `Period End`. There is no KI, so R2 and S2 stay blank and no missing Barrier Type or KI warning is shown. E2, K2, M2, and N2 come from the headers below, which are read only when Product is Super Bull (BARC's DACN and Express mails also have `Autocall Barrier`, and it is not taken as the KO Barrier):
   - BNP (and any other issuer not listed): E2 ← `Autocall Frequency(M)`, K2 and M2 ← `Super Bull Level (%)`, N2 ← `Autocall Coupon Flat (%)`.
   - HSBC and CA: E2 ← `Autocall Freq (m)` (CA also writes `Autocall Date(one-time)`, for example `3M` → 3), K2 ← `Strike (%)`, M2 ← `Autocall Barrier (%)`, N2 ← `Bonus Coupon (%,flat)` (CA also writes `Autocall Flat Coupon (%)`).
   - All other fields (Currency, underlyings, Note Price, Tenor, PG rate, dates, initial price) work as for FCN.

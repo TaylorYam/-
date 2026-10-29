@@ -582,13 +582,29 @@ Public Function Test_OrderFill_RulesReport() As String
     PasteSuperBull wsP, "HSBC"
     SetTermCell wsT.Range("V2"), Empty
     fails = RunFill(report)
-    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Super Bull") & CompareCell(wsT.Range("E2"), 3) & _
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Super Bull") & CompareCell(wsT.Range("D2"), "USD") & _
+                               CompareCell(wsT.Range("E2"), 3) & CompareCell(wsT.Range("F2"), "TSM UN") & _
                                CompareCell(wsT.Range("K2"), 83) & CompareCell(wsT.Range("L2"), "Period End") & _
                                CompareCell(wsT.Range("M2"), 90) & CompareCell(wsT.Range("N2"), 5.75) & _
-                               CompareCell(wsT.Range("O2"), 97.5) & CompareCell(wsT.Range("R2"), "") & _
-                               CompareCell(wsT.Range("V2"), 0)
+                               CompareCell(wsT.Range("O2"), 97.5) & CompareCell(wsT.Range("P2"), 6) & _
+                               CompareCell(wsT.Range("R2"), "") & CompareCell(wsT.Range("S2"), "") & _
+                               CompareCell(wsT.Range("T2"), 0) & CompareCell(wsT.Range("V2"), 0) & _
+                               CompareCell(wsT.Range("O5"), "2026/10/13") & CompareCell(wsT.Range("O8"), "2027/04/23")
     fails = fails & ExpectNoNote(report, "找不到 Barrier Type")
     Tally "Super Bull（HSBC）：K2 是 Strike、M2 是 Autocall Barrier、N2 是 Bonus Coupon", fails, passCount, total, detail
+
+    ' CA 的主要寫法和 HSBC 相同；不選 C3，由 TDCC 前 3 碼判斷上手
+    PasteSuperBull wsP, "CA"
+    wsP.Range("C3").ClearContents
+    PutText wsP.Range("C5"), "086000000000"
+    PutText wsP.Range("A10"), "Super Bull"
+    wsP.Range("G10").Value = 1
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Super Bull") & CompareCell(wsT.Range("C2"), "CA") & _
+                               CompareCell(wsT.Range("E2"), 3) & CompareCell(wsT.Range("K2"), 83) & _
+                               CompareCell(wsT.Range("M2"), 90) & CompareCell(wsT.Range("N2"), 1)
+    fails = fails & ExpectNoNote(report, "沒有 %")
+    Tally "Super Bull（CA，TDCC 判斷上手）：Autocall Freq、Bonus Coupon；Coupon 1 不當成小數", fails, passCount, total, detail
 
     PasteSuperBull wsP, "CA"
     PutText wsP.Range("A10"), "Super Bull"
@@ -680,7 +696,6 @@ End Function
 
 Private Sub PasteBase(ByVal ws As Worksheet, Optional ByVal pickIssuer As Boolean = True)
     Dim headers As Variant, values As Variant
-    Dim i As Long
 
     OrderFill_Clear
     If pickIssuer Then ws.Range("C3").Value = "BARC"
@@ -692,14 +707,7 @@ Private Sub PasteBase(ByVal ws As Worksheet, Optional ByVal pickIssuer As Boolea
                     "KI Barrier (%)", "Trade Date", "Issue Date", "Final Valuation Date", "Maturity Date")
     values = Array("FCN", "USD", 1, "TSM UN", 80, "Daily Memory", 100, 12, 98, 6, "EKI", 65, _
                    "2026-10-13", "2026-10-20", "2027-04-20", "2027-04-23")
-    For i = 0 To UBound(headers)
-        ws.Cells(9, i + 1).Value = headers(i)
-        If VarType(values(i)) = vbString Then
-            PutText ws.Cells(10, i + 1), CStr(values(i))
-        Else
-            ws.Cells(10, i + 1).Value = values(i)
-        End If
-    Next i
+    PutTable ws, headers, values
 End Sub
 
 ' SG 的寫法：沒有 Product，E 欄 Put Strike、G 欄 AutoCall，Q 欄 Fixed Coupons = All Periods
@@ -725,7 +733,6 @@ End Sub
 ' Autocall Freq（E 欄）、Autocall Barrier（F 欄）、Bonus Coupon（G 欄）
 Private Sub PasteSuperBull(ByVal ws As Worksheet, ByVal issuer As String)
     Dim headers As Variant, values As Variant
-    Dim i As Long
 
     OrderFill_Clear
     ws.Range("C3").Value = issuer
@@ -745,6 +752,13 @@ Private Sub PasteSuperBull(ByVal ws As Worksheet, ByVal issuer As String)
         values = Array("SuperBull", "USD", "TSM UN", 83, 3, 90, 5.75, 97.5, 6, _
                        "2026-10-13", "2026-10-20", "2027-04-20", "2027-04-23")
     End If
+    PutTable ws, headers, values
+End Sub
+
+' 第 9 列寫表頭、第 10 列寫數值（文字用文字格式寫入）
+Private Sub PutTable(ByVal ws As Worksheet, ByVal headers As Variant, ByVal values As Variant)
+    Dim i As Long
+
     For i = 0 To UBound(headers)
         ws.Cells(9, i + 1).Value = headers(i)
         If VarType(values(i)) = vbString Then

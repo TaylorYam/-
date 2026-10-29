@@ -184,7 +184,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
 
     guar = NumField(guarField, 0)
     ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月（0 → 1）
-    If issuer = "Citi" And guarField = "GUAR" And Not IsEmpty(guar) Then guar = guar + 1
+    If issuer = "Citi" And Not isSuperBull And Not IsEmpty(guar) Then guar = guar + 1
 
     strike = NumField(strikeField, 3)
     If koField = strikeField Then
@@ -651,7 +651,7 @@ Private Function NumField(ByVal field As String, ByVal decimalLimit As Double) A
     If Not ParseNumber(mVal(field), n, pct) Then Exit Function
 
     If decimalLimit > 0 And Not pct And n > 0 Then
-        If field = "COUPON" Then
+        If field = "COUPON" Or field = "ACCOUPON" Then
             looksDecimal = (n < decimalLimit)
         Else
             looksDecimal = (n <= decimalLimit)
@@ -802,7 +802,7 @@ Private Sub BuildHeaderMap()
     AddSyn "PGRATE", "pgrate"
     AddSyn "ACCRUALBARRIER", "accrualbarrier"    ' MS 的 DACN
     AddSyn "EXPRESSMULT", "firstperiodrebatemultiplier", "expressmultiplier"   ' FCN_Express：BARC、CA
-    ' Super Bull 專用，只在 Product 是 Super Bull 時才讀（BARC 的 DACN 也有 Autocall Barrier，不能併進 KO Barrier）
+    ' Super Bull 專用，只在 Product 是 Super Bull 時才讀（BARC 的 DACN／Express 也有 Autocall Barrier，不能併進 KO Barrier）
     AddSyn "SBLEVEL", "superbulllevel"           ' BNP
     AddSyn "ACBARRIER", "autocallbarrier"        ' HSBC、CA
     AddSyn "ACFREQ", "autocallfrequencym", "autocallfreqm", "autocalldateonetime"
@@ -1063,7 +1063,8 @@ Private Function NormTDCC(ByVal v As Variant) As String
 End Function
 
 ' Product 對應到 Variable!D 的寫法；上手各自的寫法先轉換：
-'   Citi 的 FCA → FCN；DAC（多數上手）、DRA（DBS）、VMRAN（UBS）→ DACN；Express FCN → FCN_Express
+'   Citi 的 FCA → FCN；DAC（多數上手）、DRA（DBS）、VMRAN（UBS）→ DACN；Express FCN → FCN_Express；
+'   SuperBull（BNP、HSBC）→ Super Bull
 ' 轉換後不在 Variable!D 的留空並提醒
 Private Function NormProduct(ByVal v As Variant) As String
     Dim s As String
