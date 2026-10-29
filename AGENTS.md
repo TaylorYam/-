@@ -54,6 +54,7 @@
 - 遵循既有的架構、命名、格式與相依套件，除非任務本身要改變它們。以符合驗收條件的最小且一致的變更為原則；避免無關的重構與新增相依套件。
 - 行為、設定方式或介面改變時更新文件。持久的架構決策依 `docs/adr/` 的格式記錄。
 - 中英並列的文件（`AGENTS.md`、`CLAUDE.md`、`README.md`、`docs/`）修改時，中文與英文兩區必須同步更新。
+- 起單回填新增商品或調整商品規則時，除了規則測試，還要依 `docs/order-fill.md` 的「新增商品的全樣本驗證」，用該商品 order sample 的全部信件驗證，並在 PR 寫出結果。
 
 ### 機密與本機資料
 
@@ -115,6 +116,7 @@ Keep `main` as the stable integration branch. For planned work, follow:
 - Follow existing architecture, naming, formatting, and dependencies unless the task changes them. Make the smallest coherent change that meets acceptance criteria; avoid unrelated refactors and dependencies.
 - Update documentation when behavior, setup, or interfaces change. Record lasting architecture decisions in `docs/adr/` using its format.
 - When editing a bilingual document (`AGENTS.md`, `CLAUDE.md`, `README.md`, `docs/`), update the Chinese and English sections together.
+- When adding a product to the order fill or changing a product's rules, run the rule tests and also check every mail in that product's order sample, following "Full-sample check for a new product" in `docs/order-fill.md`. Report the result in the PR.
 
 ### Secrets and local data
 
