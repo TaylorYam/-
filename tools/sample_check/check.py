@@ -7,7 +7,11 @@
   這些欄位不算不一致，另外統計在「推算」。
 - 不一致：值不同，需要人工判斷是工具錯、信件特殊，還是這支程式的規則不足。
 - 略過：不是起單內容（extract.py 已標記）。
-新增商品時，在 expected() 補上該商品的欄位規則。
+- 沒有填入：工具沒有回填（例：判斷不出上手），要看摘要。
+新增商品時，在 expected() 補上該商品的欄位規則，並把商品名稱加進 PRODUCTS 與 FLOOR_ZERO；
+表頭偵測認不得該商品的表頭時，再補 HEADER_WORDS。
+目前沒有 Citi（Daily KO／Memory Autocall、Non Callable + 1、100 − Upfront）與 SG 推定的完整條件；
+遇到這些信時差異會列為不一致（不會漏報），請看原信判斷。
 """
 import sys, json, re, collections, datetime
 
@@ -16,7 +20,7 @@ def norm(s): return re.sub(r'[^a-z0-9?]', '', (s or '').lower())
 
 
 def last_value(s):
-    """改價取最後的值：96.20%→96.15%、99.65->99.62"""
+    """改價取最後的值：97.50%→97.45%、99.10->99.05"""
     s = (s or '').strip()
     parts = re.split(r'→|->|=>|>>|(?<=[\d%])\s*>\s*(?=\d)', s)
     return parts[-1].strip()
@@ -97,11 +101,20 @@ def pick(d, *keys):
     return ''
 
 
+# 信裡的 Product 寫法 → Variable!D 的商品名稱（對照 OrderFill.bas 的 NormProduct）
+PRODUCTS = {'fcn': 'FCN', 'fca': 'FCN', 'dac': 'DACN', 'dra': 'DACN', 'vmran': 'DACN', 'dacn': 'DACN',
+            'express fcn': 'FCN_Express', 'superbull': 'Super Bull', 'super bull': 'Super Bull',
+            'range accrual': 'Range Accrual'}
+# V2（Floor Coupon）填 0 的商品
+FLOOR_ZERO = ('FCN', 'DACN', 'FCN_Express', 'Super Bull')
+
+
 def ko_type(t, issuer):
     k = (t.get('kotype') or '').strip().lower()
     if issuer == 'MS':
         mem = (t.get('komemory') or '').strip().lower()
-        base = {'daily': 'Daily', 'observation': 'Period End'}.get(k)
+        base = {'daily': 'Daily', 'daily memory': 'Daily', 'observation': 'Period End'}.get(k)
+        if k == 'daily memory' and mem != 'yes': return ''   # 和 KO Memory 矛盾，工具留空
         if base and mem in ('yes', 'no'): return base + (' Memory' if mem == 'yes' else '')
         return ''
     return {'daily': 'Daily', 'daily memory': 'Daily Memory', 'period end': 'Period End',
@@ -113,22 +126,23 @@ def barrier(t):
     if v in ('european', 'at maturity', 'eki'): return 'EKI'
     if v in ('american', 'aki'): return 'AKI'
     if v in ('mki',): return 'MKI'
-    if v in ('none', 'no', ''): return 'NONE'
+    if v in ('none', 'no'): return 'NONE'
+    if v == '':   # 沒有 Barrier Type：KI 也沒有才是 NONE；有 KI 時工具留空並提醒
+        return 'NONE' if num(pick(t, 'kibarrier', 'putki', 'ki')) is None else ''
     return '?' + v
 
 
 def expected(rec, t, inl):
     issuer = rec['issuer']
     prod_raw = pick(t, 'product')
-    p = prod_raw.lower()
-    prod = {'fcn': 'FCN', 'fca': 'FCN', 'dac': 'DACN', 'dra': 'DACN', 'vmran': 'DACN', 'dacn': 'DACN',
-            'express fcn': 'FCN_Express', 'superbull': 'Super Bull', 'super bull': 'Super Bull',
-            'range accrual': 'Range Accrual'}.get(re.sub(r'\s+', ' ', p), prod_raw)
+    prod = PRODUCTS.get(re.sub(r'\s+', ' ', prod_raw.lower()), prod_raw)
     if issuer == 'MS' and prod == 'Range Accrual' and pick(t, 'putstrike'): prod = 'DACN'
     if not prod_raw and issuer == 'SG':
         prod = {'first period': 'DACN', 'all periods': 'FCN'}.get(pick(t, 'fixedcoupons').lower(), '')
-    e = {'A2': prod, 'C2': issuer, 'D2': pick(t, 'currency', 'curr').upper(), 'Q2': 'M',
-         'V2': 0 if prod in ('FCN', 'DACN', 'FCN_Express', 'Super Bull') else None}
+    both = {**inl, **t}
+    tdcc = re.sub(r'\D', '', pick(both, 'tdcc', 'tdcccode'))
+    e = {'A2': prod, 'B2': tdcc if len(tdcc) == 12 else '', 'C2': issuer,
+         'D2': pick(t, 'currency', 'curr').upper(), 'Q2': 'M', 'V2': 0 if prod in FLOOR_ZERO else None}
     for k in range(1, 6):
         e['FGHIJ'[k - 1] + '2'] = pick(t, f'bbgcode{k}', f'underlying{k}', f'stock{k}').upper()
     pg = re.search(r'PG rate\s*:\s*([\d.]+)\s*%', rec['text'], re.I)
@@ -155,7 +169,6 @@ def expected(rec, t, inl):
     tenor = num(pick(t, 'tenorm', 'tenor'))
     if tenor is None and pick(t, 'settlementfrequency').lower() == 'monthly': tenor = num(pick(t, 'noofperiods'))
     e['P2'] = tenor
-    both = {**inl, **t}
     e['O5'] = date(pick(both, 'tradedate', 'strikedate', 'initialvaluationdate'))
     e['O6'] = date(pick(both, 'issuedate', 'issuancedate', 'issuedatetcalendardays'))
     e['O7'] = date(pick(both, 'finalvaluationdate', 'finalfixingdate', 'redemptionvaluationdate', 'finalvaluation'))

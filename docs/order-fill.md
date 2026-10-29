@@ -84,10 +84,14 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 ### 新增商品的全樣本驗證
 
-起單回填每新增一種商品，或調整既有商品的規則，除了規則測試，還要用該商品 order sample 資料夾的**全部**信件驗證一次。order sample 從 Github-Cloud repo 下載到專案根目錄（已列在 `.gitignore`）。驗證程式在 `tools/sample_check/`，需要 Python 3（套件 `extract_msg`）與 Excel。
+起單回填每新增一種商品，或調整既有商品的規則，除了規則測試，還要用該商品 order sample 資料夾的**全部**信件驗證一次。order sample 從 Github-Cloud repo 下載到專案根目錄（已列在 `.gitignore`）。驗證程式在 `tools/sample_check/`。執行前要準備：
+
+- Python 3 與 `extract_msg` 套件（`python -m pip install extract-msg`，裝在 Python 本身而不是使用者目錄，因為 `-I` 會略過使用者目錄的套件）。
+- Excel：「信任中心 → 巨集設定」勾選「信任存取 VBA 專案物件模型」。沒有勾選時，回填只會輸出一行 `ERROR:`。
+- 活頁簿：用 repo 裡已有「起單回填」工作表的 `Generator_*.xlsm`。
 
 1. 抽出起單段落：`python -I -X utf8 tools/sample_check/extract.py "<資料夾>" <輸出資料夾>`
-2. 逐封回填：`powershell -File tools/sample_check/run_fill.ps1 -Workbook <活頁簿> -HtmlDir <輸出資料夾>/html -OutFile <輸出資料夾>/result.txt`。程式會在活頁簿複本匯入 `src/vba/OrderFill.bas` 再回填，原活頁簿不會變更。
+2. 逐封回填：`powershell -ExecutionPolicy Bypass -File tools/sample_check/run_fill.ps1 -Workbook <活頁簿> -HtmlDir <輸出資料夾>/html -OutFile <輸出資料夾>/result.txt`。程式會在活頁簿複本匯入 `src/vba/OrderFill.bas` 再回填，原活頁簿不會變更。要驗證還沒 merge 的 branch 時，加上 `-Root <該 branch 的工作目錄>`（例如 `git worktree` 建的資料夾）。
 3. 比對：`python -I -X utf8 tools/sample_check/check.py <輸出資料夾>/manifest.json <輸出資料夾>/result.txt`
 
 輸出資料夾要放在 repo 以外。輸出含客戶資料，不要 commit，也不要貼進 Issue 或 PR（repo 是公開的）。
@@ -106,7 +110,9 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
   - 同一格拆成兩段（BNP，例：`MRVL`／`UW`）：只讀到前半段。
 - 略過：不是起單內容。
 
-新增商品時，先在 `check.py` 的 `expected()` 補上該商品各欄的規則（可參考 Super Bull 的寫法），再跑上面三個步驟。PR 要寫統計結果（一致〔其中用到推算〕、不一致、略過各幾封）與不一致的原因，但不要寫出 TDCC、價格、名目本金等交易資料。
+另外，工具沒有回填時（例：判斷不出上手）會列為「沒有填入」，要看摘要找原因。
+
+新增商品時，先改 `check.py` 再跑上面三個步驟：在 `expected()` 補上該商品各欄的規則（可參考 Super Bull 的寫法），把商品寫法加進 `PRODUCTS`；V2 填 0 的商品要加進 `FLOOR_ZERO`。如果該商品的表頭認不到 3 個以上，表格會讀不到，這時再補 `HEADER_WORDS`。PR 要寫統計結果（一致〔其中用到推算〕、不一致、略過各幾封）與不一致的原因，但不要寫出 TDCC、價格、名目本金等交易資料。
 
 已驗證的商品（2026-10-29）：
 
@@ -198,10 +204,14 @@ Known limitation: HSBC dates are `dd/mm/yyyy` text and are parsed day-first. If 
 
 ### Full-sample check for a new product
 
-Each time a product is added to the order fill, or the rules for an existing product change, run the rule tests and also check **every** mail in that product's order sample folder. The order samples are downloaded from the Github-Cloud repository into the project root (already listed in `.gitignore`). The check scripts are in `tools/sample_check/` and need Python 3 (with the `extract_msg` package) and Excel.
+Each time a product is added to the order fill, or the rules for an existing product change, run the rule tests and also check **every** mail in that product's order sample folder. The order samples are downloaded from the Github-Cloud repository into the project root (already listed in `.gitignore`). The check scripts are in `tools/sample_check/`. Before running them, prepare:
+
+- Python 3 with the `extract_msg` package (`python -m pip install extract-msg`). Install it into Python itself rather than the user directory, because `-I` skips user-directory packages.
+- Excel: in **Trust Center → Macro Settings**, tick **Trust access to the VBA project object model**. Without it, the fill step outputs only one `ERROR:` line.
+- Workbook: use a repository `Generator_*.xlsm` that already has the `起單回填` sheet.
 
 1. Extract the order sections: `python -I -X utf8 tools/sample_check/extract.py "<folder>" <output folder>`
-2. Fill each mail: `powershell -File tools/sample_check/run_fill.ps1 -Workbook <workbook> -HtmlDir <output folder>/html -OutFile <output folder>/result.txt`. The script imports `src/vba/OrderFill.bas` into a copy of the workbook before filling; the original workbook is not changed.
+2. Fill each mail: `powershell -ExecutionPolicy Bypass -File tools/sample_check/run_fill.ps1 -Workbook <workbook> -HtmlDir <output folder>/html -OutFile <output folder>/result.txt`. The script imports `src/vba/OrderFill.bas` into a copy of the workbook before filling; the original workbook is not changed. To check a branch that is not merged yet, add `-Root <that branch's working folder>` (for example a folder created with `git worktree`).
 3. Compare: `python -I -X utf8 tools/sample_check/check.py <output folder>/manifest.json <output folder>/result.txt`
 
 Keep the output folder outside the repository. The output contains customer data: do not commit it or paste it into an Issue or PR (the repository is public).
@@ -220,7 +230,9 @@ The paste follows each issuer's FCN sample in `起單信件格式.xlsx`, and `ex
   - One cell split into two paragraphs (BNP, for example `MRVL` / `UW`): only the first part is read.
 - Skipped: not order content.
 
-For a new product, first add its per-column rules to `expected()` in `check.py` (Super Bull is a good model), then run the three steps above. In the PR, report the counts (match [of which calculated], mismatch, skipped) and the reason for each mismatch, but do not include trade data such as TDCC, prices, or notional.
+When the tool does not fill at all (for example, the issuer cannot be detected), the mail is listed as "沒有填入" (not filled); read the summary to find out why.
+
+For a new product, update `check.py` first and then run the three steps above: add the product's per-column rules to `expected()` (Super Bull is a good model) and its spellings to `PRODUCTS`; add it to `FLOOR_ZERO` if V2 is 0 for it. If fewer than 3 of the product's headers are recognised, the table is not read; in that case also extend `HEADER_WORDS`. In the PR, report the counts (match [of which calculated], mismatch, skipped) and the reason for each mismatch, but do not include trade data such as TDCC, prices, or notional.
 
 Products checked so far (2026-10-29):
 

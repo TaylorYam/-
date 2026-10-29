@@ -1,6 +1,6 @@
 """從 order sample 資料夾的 .msg 抽出起單段落，供 run_fill.ps1 回填與 check.py 比對。
 
-用法：python -I extract.py <sample 資料夾> <輸出資料夾>
+用法：python -I -X utf8 extract.py <sample 資料夾> <輸出資料夾>
 
 - 起單段落：從玉山的 "We buy" 起，到下一個簽名檔或 From: 為止（和 FCN 樣本的貼法相同）。
 - 上手回覆裡有日期時，從信的開頭貼到起單段落結束，和 FCN 樣本的貼法相同：
@@ -30,13 +30,13 @@ ISSUER_BY_PREFIX = {'029': 'BARC', '037': 'SG', '076': 'JPM', '078': 'DBS', '082
                     '086': 'CA', '092': 'UBS', '147': 'MS', '148': 'GS', '156': 'Nomura', '159': 'Citi',
                     '325': 'HSBC', '326': 'BBVA', '328': 'Natixis'}
 SIGNATURES = ('玉山證券 E.SUN', 'From:', '寄件者:')
-HSBC_DATE_LABELS = ('Strike Date', 'Issue Date', 'Final Valuation', 'Maturity Date')
+HSBC_DATE_LABELS = ('Strike Date', 'Issue Date', 'Final Valuation(?: Date)?', 'Maturity(?: Date)?')
 
 
 def has_reply_dates(issuer, before):
     """上手回覆（"We buy" 之前）有沒有 FCN 樣本也會一起貼的日期區"""
     if issuer == 'HSBC':
-        return all(re.search(re.escape(lb) + r' \d{1,2}/\d{1,2}/\d{4}', before) for lb in HSBC_DATE_LABELS)
+        return all(re.search(lb + r' \d{1,2}/\d{1,2}/\d{4}', before) for lb in HSBC_DATE_LABELS)
     if issuer == 'GS':
         return 'Order Summary' in before and 'Final Valuation Date' in before
     return False
@@ -105,7 +105,6 @@ def main(src, out):
         rec['text'] = text
         rows = _Rows(); rows.feed(seg)
         rec['rows'] = [r for r in rows.rows if any(r)]
-        rec['tdcc_in_text'] = sorted(set(re.findall(r'(?<!\d)(\d{12})(?!\d)', text)))
         manifest.append(rec)
 
     with open(os.path.join(out, 'manifest.json'), 'w', encoding='utf-8') as f:
