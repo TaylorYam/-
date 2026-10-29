@@ -84,7 +84,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Dim guar As Variant, strike As Variant, koBarrier As Variant
     Dim coupon As Variant, notePrice As Variant, upfront As Variant
     Dim tenor As Variant, periods As Variant
-    Dim ki As Variant, pgRate As Variant, accrual As Variant, expressMult As Variant
+    Dim ki As Variant, pgRate As Variant, accrualBarrier As Variant, expressMult As Variant
     Dim koType As String, barrierType As String, initPrice As String, fixedCpn As String
     Dim ul(1 To 5) As String
     Dim tradeDate As Date, issueDate As Date, finalDate As Date, maturityDate As Date
@@ -178,14 +178,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         fixedCpn = LCase$(CollapseSpaces(CStr(GetVal("FIXEDCPN"))))
         If issuer = "SG" And (fixedCpn = "all periods" Or fixedCpn = "first period") _
            And Not IsEmpty(koBarrier) And Not IsEmpty(strike) Then
-            If fixedCpn = "all periods" Then
-                product = "FCN"
-                fixedCpn = "All Periods"
-            Else
-                product = "DACN"
-                fixedCpn = "First Period"
-            End If
-            AddNote "信中沒有 Product，依 SG 條件（Fixed Coupons 是 " & fixedCpn & "、AutoCall 是單一數字、" & _
+            If fixedCpn = "all periods" Then product = "FCN" Else product = "DACN"
+            AddNote "信中沒有 Product，依 SG 條件（Fixed Coupons 是 " & GetVal("FIXEDCPN") & "、AutoCall 是單一數字、" & _
                     "有 Put Strike）推定為 " & product & "，A2 請確認"
         Else
             WarnMissing "PRODUCT"
@@ -199,10 +193,10 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     End If
 
     ' Accrual Barrier（MS 的 DACN）沒有對應欄位；和 Strike 不同時提醒，K2 仍填 Strike
-    accrual = NumField("ACCRUALBARRIER", 0)
-    If Not IsEmpty(accrual) And Not IsEmpty(strike) Then
-        If accrual <> strike Then
-            AddNote "Accrual Barrier（" & accrual & "）和 Strike（" & strike & "）不同，K2 填 Strike"
+    accrualBarrier = NumField("ACCRUALBARRIER", 0)
+    If Not IsEmpty(accrualBarrier) And Not IsEmpty(strike) Then
+        If accrualBarrier <> strike Then
+            AddNote "Accrual Barrier（" & accrualBarrier & "）和 Strike（" & strike & "）不同，K2 填 Strike"
         End If
     End If
 
@@ -210,6 +204,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     If product = "FCN_Express" Then
         If Not IsEmpty(guar) Then
             If guar <> 0 Then AddNote "FCN_Express 的 Guaranteed Period 固定 0，信裡是 " & guar & "，E2 填 0"
+        ElseIf IsFlagged("GUAR") Then
+            AddNote "FCN_Express 的 Guaranteed Period 固定 0，E2 已填 0（不是留空）"
         End If
         guar = 0
         expressMult = NumField("EXPRESSMULT", 0)
