@@ -128,6 +128,8 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 不一致的都是上面列的已知情況：Super Bull 是 BNP 一封信兩筆單 5 封、`MRVL`／`UW` 拆成兩段 2 封；FCN_Express 是 BARC 一封信兩筆單 4 封。
 
+DACN 加上 SG `First Two Periods` 的推定後重跑（#23），統計不變；這 2 封的 A2 從留空改成推定 DACN。
+
 ---
 
 ## English
@@ -251,3 +253,5 @@ Products checked so far (2026-10-29):
 | FCN_Express | 217 | 148 | 0 | 4 | 65 |
 
 All mismatches are the known cases listed above: for Super Bull, 5 BNP mails with two trades and 2 with `MRVL` / `UW` split; for FCN_Express, 4 BARC mails with two trades.
+
+DACN was rerun after adding the SG `First Two Periods` inference (#23) and the counts are unchanged; for those 2 mails, A2 is now inferred as DACN instead of left blank.
