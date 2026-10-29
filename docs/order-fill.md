@@ -82,6 +82,42 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 已知限制：HSBC 的日期是 `dd/mm/yyyy` 文字，程式依日在前解析。如果 Excel 貼上時已自動轉成日期，而且日、月都 ≤ 12，可能會被轉錯，回填後請核對。
 
+### 新增商品的全樣本驗證
+
+起單回填每新增一種商品，或調整既有商品的規則，除了規則測試，還要用該商品 order sample 資料夾的**全部**信件驗證一次。order sample 從 Github-Cloud repo 下載到專案根目錄（已列在 `.gitignore`）。驗證程式在 `tools/sample_check/`，需要 Python 3（套件 `extract_msg`）與 Excel。
+
+1. 抽出起單段落：`python -I -X utf8 tools/sample_check/extract.py "<資料夾>" <輸出資料夾>`
+2. 逐封回填：`powershell -File tools/sample_check/run_fill.ps1 -Workbook <活頁簿> -HtmlDir <輸出資料夾>/html -OutFile <輸出資料夾>/result.txt`。程式會在活頁簿複本匯入 `src/vba/OrderFill.bas` 再回填，原活頁簿不會變更。
+3. 比對：`python -I -X utf8 tools/sample_check/check.py <輸出資料夾>/manifest.json <輸出資料夾>/result.txt`
+
+輸出資料夾要放在 repo 以外。輸出含客戶資料，不要 commit，也不要貼進 Issue 或 PR（repo 是公開的）。
+
+貼法比照 `起單信件格式.xlsx` 裡各上手的 FCN 樣本，`extract.py` 會自動處理：
+
+- 從玉山的 `We buy` 貼到簽名檔為止。沒有 `We buy` 的信不是起單內容，略過。例：BARC 的 BARX COMET 成交確認、索取 final TS 的信。
+- HSBC：HSBC 回覆 final TS 時的日期區（`Strike Date`／`Issue Date`／`Final Valuation`／`Maturity Date`，左右一組）要一起貼。沒有這封回覆時，日期由 `Term` 推算。
+- GS：GS 回覆裡的 `Order Summary`（`TDCC Code`／`Issue Date`／`Final Valuation Date`／`Maturity Date`）要一起貼。
+
+`check.py` 自己讀信件表格算出應填值（不呼叫 VBA），再逐欄和回填結果比對。結果分成三類：
+
+- 一致：也包含用到推算的信。信裡沒有日期、工具有提醒時，O5 填今天，O6～O8 由 `Term` 推算，這些欄位不算不一致。不寫 Trade date 的上手（CA、Natixis、Nomura、DBS、MS、UBS 等）屬於這類，維持現狀。
+- 不一致：逐封看原信，判斷是工具錯、信件特殊，還是 `check.py` 的規則不足。已知不處理的情況：
+  - 一封信兩筆單（兩張表，BNP、BARC）：不同的欄位留空並提醒。請一次只貼一張表。
+  - 同一格拆成兩段（BNP，例：`MRVL`／`UW`）：只讀到前半段。
+- 略過：不是起單內容。
+
+新增商品時，先在 `check.py` 的 `expected()` 補上該商品各欄的規則（可參考 Super Bull 的寫法），再跑上面三個步驟。PR 要寫統計結果（一致〔其中用到推算〕、不一致、略過各幾封）與不一致的原因，但不要寫出 TDCC、價格、名目本金等交易資料。
+
+已驗證的商品（2026-10-29）：
+
+| 商品 | 信件 | 一致 | 其中用到推算 | 不一致 | 略過 |
+|---|---|---|---|---|---|
+| Super Bull | 142 | 135 | 42 | 7 | 0 |
+| DACN | 85 | 81 | 48 | 0 | 4 |
+| FCN_Express | 217 | 148 | 0 | 4 | 65 |
+
+不一致的都是上面列的已知情況：Super Bull 是 BNP 一封信兩筆單 5 封、`MRVL`／`UW` 拆成兩段 2 封；FCN_Express 是 BARC 一封信兩筆單 4 封。
+
 ---
 
 ## English
@@ -159,3 +195,39 @@ Run these tests in a **copy** of the workbook (`Generator_20261005.xlsm` already
 - `Test_OrderFill_Clear`: selects C3 and then presses **清空**, checking that no run-time error 1004 appears, pictures in the paste area are deleted, and the buttons and the C3 drop-down remain.
 
 Known limitation: HSBC dates are `dd/mm/yyyy` text and are parsed day-first. If Excel has already converted such a value into a date when it was pasted, and both day and month are ≤ 12, the date may be wrong. Check it after filling.
+
+### Full-sample check for a new product
+
+Each time a product is added to the order fill, or the rules for an existing product change, run the rule tests and also check **every** mail in that product's order sample folder. The order samples are downloaded from the Github-Cloud repository into the project root (already listed in `.gitignore`). The check scripts are in `tools/sample_check/` and need Python 3 (with the `extract_msg` package) and Excel.
+
+1. Extract the order sections: `python -I -X utf8 tools/sample_check/extract.py "<folder>" <output folder>`
+2. Fill each mail: `powershell -File tools/sample_check/run_fill.ps1 -Workbook <workbook> -HtmlDir <output folder>/html -OutFile <output folder>/result.txt`. The script imports `src/vba/OrderFill.bas` into a copy of the workbook before filling; the original workbook is not changed.
+3. Compare: `python -I -X utf8 tools/sample_check/check.py <output folder>/manifest.json <output folder>/result.txt`
+
+Keep the output folder outside the repository. The output contains customer data: do not commit it or paste it into an Issue or PR (the repository is public).
+
+The paste follows each issuer's FCN sample in `起單信件格式.xlsx`, and `extract.py` handles it automatically:
+
+- Paste from E.SUN's `We buy` to the signature. A mail without `We buy` is not order content and is skipped, for example BARC's BARX COMET execution confirmations or a request for the final TS.
+- HSBC: include the date block from HSBC's final TS reply (`Strike Date` / `Issue Date` / `Final Valuation` / `Maturity Date`, label and value side by side). Without that reply, the dates are calculated by `Term`.
+- GS: include the `Order Summary` from GS's reply (`TDCC Code` / `Issue Date` / `Final Valuation Date` / `Maturity Date`).
+
+`check.py` reads the mail table itself to work out the expected values (it does not call the VBA), then compares them cell by cell with the fill result. Results fall into three groups:
+
+- Match: this includes mails that rely on calculated dates. When the mail has no date and the tool warns about it, O5 is today and O6 to O8 are calculated by `Term`; these cells do not count as mismatches. Issuers that do not send a Trade date (CA, Natixis, Nomura, DBS, MS, UBS, and others) fall here, and this stays as it is.
+- Mismatch: read the original mail and decide whether the tool is wrong, the mail is unusual, or the `check.py` rules are incomplete. Known cases that are not handled:
+  - Two trades in one mail (two tables, BNP and BARC): the fields that differ are left blank with a warning. Paste one table at a time.
+  - One cell split into two paragraphs (BNP, for example `MRVL` / `UW`): only the first part is read.
+- Skipped: not order content.
+
+For a new product, first add its per-column rules to `expected()` in `check.py` (Super Bull is a good model), then run the three steps above. In the PR, report the counts (match [of which calculated], mismatch, skipped) and the reason for each mismatch, but do not include trade data such as TDCC, prices, or notional.
+
+Products checked so far (2026-10-29):
+
+| Product | Mails | Match | Of which calculated | Mismatch | Skipped |
+|---|---|---|---|---|---|
+| Super Bull | 142 | 135 | 42 | 7 | 0 |
+| DACN | 85 | 81 | 48 | 0 | 4 |
+| FCN_Express | 217 | 148 | 0 | 4 | 65 |
+
+All mismatches are the known cases listed above: for Super Bull, 5 BNP mails with two trades and 2 with `MRVL` / `UW` split; for FCN_Express, 4 BARC mails with two trades.
