@@ -197,10 +197,10 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     pgRate = NumField("PGRATE", 0)
 
     ' 信中沒有 Product 時不預設；只有 SG 的 AutoCall 是單一數字、有 Put Strike 時，
-    ' 依 Fixed Coupons 推定：All Periods（每期固定配息）→ FCN、First Period（只有第一期固定）→ DACN
+    ' 依 Fixed Coupons 推定：All Periods（每期固定配息）→ FCN、First Period／First Two Periods（只有前一、兩期固定）→ DACN
     If product = "" And Not IsFlagged("PRODUCT") Then
         fixedCpn = LCase$(CollapseSpaces(CStr(GetVal("FIXEDCPN"))))
-        If issuer = "SG" And (fixedCpn = "all periods" Or fixedCpn = "first period") _
+        If issuer = "SG" And (fixedCpn = "all periods" Or fixedCpn = "first period" Or fixedCpn = "first two periods") _
            And Not IsEmpty(koBarrier) And Not IsEmpty(strike) Then
             If fixedCpn = "all periods" Then product = "FCN" Else product = "DACN"
             AddNote "信中沒有 Product，依 SG 條件（Fixed Coupons 是 " & GetVal("FIXEDCPN") & "、AutoCall 是單一數字、" & _

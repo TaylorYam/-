@@ -68,7 +68,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
   - BNP（其他上手比照 BNP）：E2 ← `Autocall Frequency(M)`，K2、M2 ← `Super Bull Level (%)`，N2 ← `Autocall Coupon Flat (%)`。
   - HSBC、CA：E2 ← `Autocall Freq (m)`（CA 另一種寫法是 `Autocall Date(one-time)`，例：`3M` → 3），K2 ← `Strike (%)`，M2 ← `Autocall Barrier (%)`，N2 ← `Bonus Coupon (%,flat)`（CA 另一種寫法是 `Autocall Flat Coupon (%)`）。
   - 其他欄位（Currency、標的、Note Price、Tenor、PG rate、日期、期初價格）和 FCN 相同。
-- 信中沒有 Product 時不預設，A2 留空並提醒。只有 SG 例外：`AutoCall` 是單一數字、有 `Put Strike`，而且 `Fixed Coupons` 是 `All Periods` 時推定為 `FCN`、是 `First Period` 時推定為 `DACN`，並提醒確認。SG 的樣本只有一封 FCN 和幾封 DACN，無法確認 SG 其他類似產品（例如 `FCN_Stepdown`）的信不會也符合條件，所以推定後請一定核對 A2；如果改成其他產品，V2 的 0 不會自動清掉，請一併清空。
+- 信中沒有 Product 時不預設，A2 留空並提醒。只有 SG 例外：`AutoCall` 是單一數字、有 `Put Strike`，而且 `Fixed Coupons` 是 `All Periods` 時推定為 `FCN`、是 `First Period` 或 `First Two Periods` 時推定為 `DACN`，並提醒確認。SG 的樣本只有一封 FCN 和幾封 DACN，無法確認 SG 其他類似產品（例如 `FCN_Stepdown`）的信不會也符合條件，所以推定後請一定核對 A2；如果改成其他產品，V2 的 0 不會自動清掉，請一併清空。
 - Floor Coupon（V2）：A2 是 `FCN`、`DACN`、`FCN_Express` 或 `Super Bull`（包含 SG 推定、Citi 的 `FCA`、MS 判定的 DACN）時填 0；其他產品（包含 `FCN_Stepdown` 等變體）或 A2 留空時清空，避免上一筆的值留到下一筆。
 - 信中沒有 Trade date 時 O5 填今天。
 - Issue／Final／Maturity date 沒有時，沿用 `Term` 既有邏輯推算，並提醒。
@@ -192,7 +192,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
   - BNP (and any other issuer not listed): E2 ← `Autocall Frequency(M)`, K2 and M2 ← `Super Bull Level (%)`, N2 ← `Autocall Coupon Flat (%)`.
   - HSBC and CA: E2 ← `Autocall Freq (m)` (CA also writes `Autocall Date(one-time)`, for example `3M` → 3), K2 ← `Strike (%)`, M2 ← `Autocall Barrier (%)`, N2 ← `Bonus Coupon (%,flat)` (CA also writes `Autocall Flat Coupon (%)`).
   - All other fields (Currency, underlyings, Note Price, Tenor, PG rate, dates, initial price) work as for FCN.
-- When the mail has no Product, nothing is assumed: A2 is left blank with a warning. SG is the only exception: when `AutoCall` is a single number and there is a `Put Strike`, the product is inferred as `FCN` if `Fixed Coupons` is `All Periods` and as `DACN` if it is `First Period`, with a warning to confirm it. Only one SG FCN sample and a few SG DACN samples are available, so it is not known whether mails for similar SG products (such as `FCN_Stepdown`) also meet these conditions; always check A2 after an inference. If you change it to another product, the 0 in V2 is not cleared automatically, so clear it as well.
+- When the mail has no Product, nothing is assumed: A2 is left blank with a warning. SG is the only exception: when `AutoCall` is a single number and there is a `Put Strike`, the product is inferred as `FCN` if `Fixed Coupons` is `All Periods` and as `DACN` if it is `First Period` or `First Two Periods`, with a warning to confirm it. Only one SG FCN sample and a few SG DACN samples are available, so it is not known whether mails for similar SG products (such as `FCN_Stepdown`) also meet these conditions; always check A2 after an inference. If you change it to another product, the 0 in V2 is not cleared automatically, so clear it as well.
 - Floor Coupon (V2): 0 when A2 is `FCN`, `DACN`, `FCN_Express`, or `Super Bull` (including the SG inference, Citi's `FCA`, and MS's DACN); cleared for any other product (including variants such as `FCN_Stepdown`) or when A2 is blank, so a previous trade's value is not carried over.
 - When the mail has no Trade date, O5 is set to today.
 - Missing Issue / Final / Maturity dates are calculated by the existing `Term` logic, with a warning.

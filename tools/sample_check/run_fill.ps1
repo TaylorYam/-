@@ -2,8 +2,10 @@
   [Parameter(Mandatory)][string]$Workbook,
   [Parameter(Mandatory)][string]$HtmlDir,
   [Parameter(Mandatory)][string]$OutFile,
-  [string]$Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+  [string]$Root
 )
+# PowerShell 5.1 的參數預設值裡 $PSScriptRoot 是空的，所以在這裡才指定預設的 repo 根目錄
+if (-not $Root) { $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 # 在活頁簿「複本」匯入 src/vba/OrderFill.bas，把 extract.py 抽出的每封 .htm 貼到「起單回填」A7、
 # 按「填入」，再讀回 Term!A2:V2 與 O5:O9。原活頁簿不會被修改。
 $run = Join-Path $env:TEMP ("orderfill-check-" + [guid]::NewGuid().ToString("N"))
