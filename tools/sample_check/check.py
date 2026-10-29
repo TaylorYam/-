@@ -138,7 +138,8 @@ def expected(rec, t, inl):
     prod = PRODUCTS.get(re.sub(r'\s+', ' ', prod_raw.lower()), prod_raw)
     if issuer == 'MS' and prod == 'Range Accrual' and pick(t, 'putstrike'): prod = 'DACN'
     if not prod_raw and issuer == 'SG':
-        prod = {'first period': 'DACN', 'all periods': 'FCN'}.get(pick(t, 'fixedcoupons').lower(), '')
+        prod = {'first period': 'DACN', 'first two periods': 'DACN', 'all periods': 'FCN'}.get(
+            re.sub(r'\s+', ' ', pick(t, 'fixedcoupons').lower()), '')
     both = {**inl, **t}
     tdcc = re.sub(r'\D', '', pick(both, 'tdcc', 'tdcccode'))
     e = {'A2': prod, 'B2': tdcc if len(tdcc) == 12 else '', 'C2': issuer,

@@ -394,7 +394,7 @@ Public Function Test_OrderFill_RulesReport() As String
     PutText wsP.Range("Q10"), "Coupon Barrier"
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & ExpectNote(report, "找不到 Product，A2 留空")
-    Tally "SG：Fixed Coupons 不是 All Periods／First Period → A2 留空並提醒", fails, passCount, total, detail
+    Tally "SG：Fixed Coupons 不是 All Periods／First Period／First Two Periods → A2 留空並提醒", fails, passCount, total, detail
 
     PasteSGNoProduct wsP
     PutText wsP.Range("G10"), "105%/100%/95%"
@@ -552,6 +552,14 @@ Public Function Test_OrderFill_RulesReport() As String
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "DACN") & CompareCell(wsT.Range("V2"), 0) & _
                                ExpectNote(report, "Fixed Coupons 是 First Period") & ExpectNote(report, "推定為 DACN")
     Tally "SG：Fixed Coupons 是 First Period → 推定 DACN 並提醒", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    PutText wsP.Range("Q10"), "First Two Periods"
+    SetTermCell wsT.Range("V2"), Empty
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "DACN") & CompareCell(wsT.Range("V2"), 0) & _
+                               ExpectNote(report, "Fixed Coupons 是 First Two Periods") & ExpectNote(report, "推定為 DACN")
+    Tally "SG：Fixed Coupons 是 First Two Periods → 推定 DACN 並提醒", fails, passCount, total, detail
 
     ' SG 的 Quote ? 欄值是 "Strike"：數值列的值不能當成左右一組的標題（#14）
     PasteSGNoProduct wsP
