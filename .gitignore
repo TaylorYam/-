@@ -43,3 +43,8 @@ Thumbs.db
 *~
 .idea/
 .vscode/*.local.json
+
+# Order email samples (customer data, pulled locally from the Github-Cloud repo)
+/* order sample/
+/* Oreder sample/
+*.msg
