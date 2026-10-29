@@ -86,6 +86,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Dim tenor As Variant, periods As Variant
     Dim ki As Variant, pgRate As Variant, accrualBarrier As Variant, expressMult As Variant
     Dim koType As String, barrierType As String, initPrice As String, fixedCpn As String
+    Dim guarField As String, strikeField As String, koField As String, couponField As String
+    Dim isSuperBull As Boolean
     Dim ul(1 To 5) As String
     Dim tradeDate As Date, issueDate As Date, finalDate As Date, maturityDate As Date
     Dim hasTrade As Boolean, hasIssue As Boolean, hasFinal As Boolean, hasMaturity As Boolean
@@ -162,13 +164,35 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         AddNote "標的超過 5 檔（第 6 檔：" & GetVal("UL6") & "），Term 只放得下 5 檔"
     End If
 
-    guar = NumField("GUAR", 0)
-    ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月（0 → 1）
-    If issuer = "Citi" And Not IsEmpty(guar) Then guar = guar + 1
+    ' Super Bull 的 E／K／M／N 讀各自的表頭：HSBC、CA 是 Strike、Autocall Barrier；
+    ' 其他上手（BNP）的 K、M 都是 Super Bull Level
+    guarField = "GUAR"
+    strikeField = "STRIKE"
+    koField = "KOBARRIER"
+    couponField = "COUPON"
+    isSuperBull = (product = "Super Bull")
+    If isSuperBull Then
+        guarField = "ACFREQ"
+        couponField = "ACCOUPON"
+        If issuer = "HSBC" Or issuer = "CA" Then
+            koField = "ACBARRIER"
+        Else
+            strikeField = "SBLEVEL"
+            koField = "SBLEVEL"
+        End If
+    End If
 
-    strike = NumField("STRIKE", 3)
-    koBarrier = NumField("KOBARRIER", 3)
-    coupon = NumField("COUPON", 1)
+    guar = NumField(guarField, 0)
+    ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月（0 → 1）
+    If issuer = "Citi" And Not isSuperBull And Not IsEmpty(guar) Then guar = guar + 1
+
+    strike = NumField(strikeField, 3)
+    If koField = strikeField Then
+        koBarrier = strike
+    Else
+        koBarrier = NumField(koField, 3)
+    End If
+    coupon = NumField(couponField, 1)
     ki = NumField("KI", 3)
     pgRate = NumField("PGRATE", 0)
 
@@ -237,21 +261,31 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         If Not IsEmpty(upfront) Then notePrice = Round(100 - upfront, 4)
     End If
 
-    koType = NormKOType(GetVal("KOTYPE"), GetVal("KOMEMORY"), GetVal("MEMAUTOCALL"), GetVal("DAILYKO"))
-
-    barrierType = NormBarrierType(GetVal("BARRIERTYPE"))
-    If barrierType = "" And Not IsFlagged("BARRIERTYPE") Then
-        If Not IsEmpty(ki) Then
-            FlagField "BARRIERTYPE", "有 KI（" & ki & "）但沒有 Barrier Type，R2 留空"
-        ElseIf ul(1) <> "" And Not IsFlagged("KI") Then
-            barrierType = "NONE"   ' 例：SG 的 KI Type、KI 都是 N/A
-        End If
+    ' Super Bull 的 KO Type 固定 Period End
+    If isSuperBull Then
+        koType = "Period End"
+    Else
+        koType = NormKOType(GetVal("KOTYPE"), GetVal("KOMEMORY"), GetVal("MEMAUTOCALL"), GetVal("DAILYKO"))
     End If
-    If barrierType = "NONE" Then
-        If Not IsEmpty(ki) Then
-            If ki <> 0 Then AddNote "Barrier Type 是 NONE，但 KI 有值（" & ki & "），S2 留空"
-        End If
+
+    ' Super Bull 沒有 KI：R2、S2 留空
+    If isSuperBull Then
         ki = Empty
+    Else
+        barrierType = NormBarrierType(GetVal("BARRIERTYPE"))
+        If barrierType = "" And Not IsFlagged("BARRIERTYPE") Then
+            If Not IsEmpty(ki) Then
+                FlagField "BARRIERTYPE", "有 KI（" & ki & "）但沒有 Barrier Type，R2 留空"
+            ElseIf ul(1) <> "" And Not IsFlagged("KI") Then
+                barrierType = "NONE"   ' 例：SG 的 KI Type、KI 都是 N/A
+            End If
+        End If
+        If barrierType = "NONE" Then
+            If Not IsEmpty(ki) Then
+                If ki <> 0 Then AddNote "Barrier Type 是 NONE，但 KI 有值（" & ki & "），S2 留空"
+            End If
+            ki = Empty
+        End If
     End If
 
     initPrice = NormInitPrice(GetVal("INITPRICE"))
@@ -264,15 +298,15 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     '--- 提醒：找不到的欄位（已提醒過格式或不一致的不重複）---
     If tdcc = "" Then WarnMissing "TDCC"
     If ccy = "" Then WarnMissing "CURRENCY"
-    If IsEmpty(guar) Then WarnMissing "GUAR"
+    If IsEmpty(guar) Then WarnMissing guarField
     If ul(1) = "" Then WarnMissing "UL1"
-    If IsEmpty(strike) Then WarnMissing "STRIKE"
+    If IsEmpty(strike) Then WarnMissing strikeField
     If koType = "" Then WarnMissing "KOTYPE"
-    If IsEmpty(koBarrier) Then WarnMissing "KOBARRIER"
-    If IsEmpty(coupon) Then WarnMissing "COUPON"
+    If IsEmpty(koBarrier) And koField <> strikeField Then WarnMissing koField
+    If IsEmpty(coupon) Then WarnMissing couponField
     If IsEmpty(notePrice) And Not IsFlagged("UPFRONT") Then WarnMissing "PRICE"
     If IsEmpty(tenor) Then WarnMissing "TENOR"
-    If barrierType = "" Then WarnMissing "BARRIERTYPE"
+    If barrierType = "" And Not isSuperBull Then WarnMissing "BARRIERTYPE"
     If barrierType <> "" And barrierType <> "NONE" And IsEmpty(ki) Then WarnMissing "KI"
     If IsEmpty(pgRate) Then WarnMissing "PGRATE"
     If Not hasTrade Then
@@ -310,8 +344,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     wsT.Range("R2").Value = barrierType
     wsT.Range("S2").Value = ki
     wsT.Range("T2").Value = pgRate
-    ' Floor Coupon：FCN、DACN、FCN_Express 固定 0，其他產品留空
-    If product = "FCN" Or product = "DACN" Or product = "FCN_Express" Then wsT.Range("V2").Value = 0
+    ' Floor Coupon：FCN、DACN、FCN_Express、Super Bull 固定 0，其他產品留空
+    If product = "FCN" Or product = "DACN" Or product = "FCN_Express" Or isSuperBull Then wsT.Range("V2").Value = 0
 
     wsT.Range("O5").Value = Format$(tradeDate, "yyyy/mm/dd")
     wsT.Range("O9").Value = initPrice
@@ -578,7 +612,7 @@ Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As 
             End If
             key = "D" & CStr(CLng(d))
         Case "GUAR", "STRIKE", "KOBARRIER", "COUPON", "PRICE", "UPFRONT", "TENOR", "PERIODS", "KI", "PGRATE", _
-             "ACCRUALBARRIER", "EXPRESSMULT"
+             "ACCRUALBARRIER", "EXPRESSMULT", "SBLEVEL", "ACBARRIER", "ACFREQ", "ACCOUPON"
             If Not ParseNumber(v, n, pct) Then
                 FlagField field, FieldLabel(field) & " 格式不認得：" & ShowVal(raw) & "，" & MissingAction(field)
                 Exit Sub
@@ -617,7 +651,7 @@ Private Function NumField(ByVal field As String, ByVal decimalLimit As Double) A
     If Not ParseNumber(mVal(field), n, pct) Then Exit Function
 
     If decimalLimit > 0 And Not pct And n > 0 Then
-        If field = "COUPON" Then
+        If field = "COUPON" Or field = "ACCOUPON" Then
             looksDecimal = (n < decimalLimit)
         Else
             looksDecimal = (n <= decimalLimit)
@@ -698,6 +732,10 @@ Private Function FieldLabel(ByVal field As String) As String
         Case "PGRATE": FieldLabel = "PG rate"
         Case "ACCRUALBARRIER": FieldLabel = "Accrual Barrier"
         Case "EXPRESSMULT": FieldLabel = "First Period Rebate Multiplier／Express Multiplier"
+        Case "SBLEVEL": FieldLabel = "Super Bull Level"
+        Case "ACBARRIER": FieldLabel = "Autocall Barrier"
+        Case "ACFREQ": FieldLabel = "Autocall Frequency／Autocall Freq／Autocall Date(one-time)"
+        Case "ACCOUPON": FieldLabel = "Autocall Coupon Flat／Bonus Coupon／Autocall Flat Coupon"
         Case Else: FieldLabel = field
     End Select
 End Function
@@ -764,6 +802,11 @@ Private Sub BuildHeaderMap()
     AddSyn "PGRATE", "pgrate"
     AddSyn "ACCRUALBARRIER", "accrualbarrier"    ' MS 的 DACN
     AddSyn "EXPRESSMULT", "firstperiodrebatemultiplier", "expressmultiplier"   ' FCN_Express：BARC、CA
+    ' Super Bull 專用，只在 Product 是 Super Bull 時才讀（BARC 的 DACN／Express 也有 Autocall Barrier，不能併進 KO Barrier）
+    AddSyn "SBLEVEL", "superbulllevel"           ' BNP
+    AddSyn "ACBARRIER", "autocallbarrier"        ' HSBC、CA
+    AddSyn "ACFREQ", "autocallfrequencym", "autocallfreqm", "autocalldateonetime"
+    AddSyn "ACCOUPON", "autocallcouponflat", "bonuscouponflat", "autocallflatcoupon"
 End Sub
 
 Private Sub AddSyn(ByVal field As String, ParamArray keys() As Variant)
@@ -1020,7 +1063,8 @@ Private Function NormTDCC(ByVal v As Variant) As String
 End Function
 
 ' Product 對應到 Variable!D 的寫法；上手各自的寫法先轉換：
-'   Citi 的 FCA → FCN；DAC（多數上手）、DRA（DBS）、VMRAN（UBS）→ DACN；Express FCN → FCN_Express
+'   Citi 的 FCA → FCN；DAC（多數上手）、DRA（DBS）、VMRAN（UBS）→ DACN；Express FCN → FCN_Express；
+'   SuperBull（BNP、HSBC）→ Super Bull
 ' 轉換後不在 Variable!D 的留空並提醒
 Private Function NormProduct(ByVal v As Variant) As String
     Dim s As String
@@ -1033,6 +1077,7 @@ Private Function NormProduct(ByVal v As Variant) As String
         Case "FCA": s = "FCN"
         Case "DAC", "DRA", "VMRAN": s = "DACN"
         Case "EXPRESS FCN": s = "FCN_Express"
+        Case "SUPERBULL": s = "Super Bull"
     End Select
 
     Set wsV = ThisWorkbook.Worksheets("Variable")
