@@ -564,6 +564,66 @@ Public Function Test_OrderFill_RulesReport() As String
     fails = fails & ExpectNoNote(report, "Strike 不一致")
     Tally "SG 的 Quote ? 是 Strike → 不當成標題，Strike 照表格、推定 FCN", fails, passCount, total, detail
 
+    ' Super Bull（#19）
+    PasteSuperBull wsP, "BNP"
+    SetTermCell wsT.Range("V2"), Empty
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Super Bull") & CompareCell(wsT.Range("E2"), 3) & _
+                               CompareCell(wsT.Range("K2"), 70) & CompareCell(wsT.Range("L2"), "Period End") & _
+                               CompareCell(wsT.Range("M2"), 70) & CompareCell(wsT.Range("N2"), 6.79) & _
+                               CompareCell(wsT.Range("O2"), 97) & CompareCell(wsT.Range("P2"), 6) & _
+                               CompareCell(wsT.Range("R2"), "") & CompareCell(wsT.Range("S2"), "") & _
+                               CompareCell(wsT.Range("T2"), 0) & CompareCell(wsT.Range("V2"), 0)
+    fails = fails & ExpectNoNote(report, "找不到 Barrier Type") & ExpectNoNote(report, "找不到 KI") & _
+                    ExpectNoNote(report, "找不到 KO")
+    Tally "Super Bull（BNP）：K2、M2 是 Super Bull Level，E2 是 Autocall Frequency，L2 Period End，R2、S2 留空", _
+          fails, passCount, total, detail
+
+    PasteSuperBull wsP, "HSBC"
+    SetTermCell wsT.Range("V2"), Empty
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Super Bull") & CompareCell(wsT.Range("E2"), 3) & _
+                               CompareCell(wsT.Range("K2"), 83) & CompareCell(wsT.Range("L2"), "Period End") & _
+                               CompareCell(wsT.Range("M2"), 90) & CompareCell(wsT.Range("N2"), 5.75) & _
+                               CompareCell(wsT.Range("O2"), 97.5) & CompareCell(wsT.Range("R2"), "") & _
+                               CompareCell(wsT.Range("V2"), 0)
+    fails = fails & ExpectNoNote(report, "找不到 Barrier Type")
+    Tally "Super Bull（HSBC）：K2 是 Strike、M2 是 Autocall Barrier、N2 是 Bonus Coupon", fails, passCount, total, detail
+
+    PasteSuperBull wsP, "CA"
+    PutText wsP.Range("A10"), "Super Bull"
+    wsP.Range("E9").Value = "Autocall Date(one-time)"
+    PutText wsP.Range("E10"), "3M"
+    wsP.Range("G9").Value = "Autocall Flat Coupon (%)"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Super Bull") & CompareCell(wsT.Range("E2"), 3) & _
+                               CompareCell(wsT.Range("K2"), 83) & CompareCell(wsT.Range("M2"), 90) & _
+                               CompareCell(wsT.Range("N2"), 5.75)
+    Tally "Super Bull（CA）：Autocall Date(one-time) 3M → E2 3、Autocall Flat Coupon → N2", fails, passCount, total, detail
+
+    PasteSuperBull wsP, "BNP"
+    wsP.Range("E9:E10").ClearContents
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), "") & CompareCell(wsT.Range("M2"), "") & _
+                               ExpectNote(report, "信中找不到 Super Bull Level，留空")
+    Tally "Super Bull（BNP）沒有 Super Bull Level → K2、M2 留空並提醒", fails, passCount, total, detail
+
+    PasteSuperBull wsP, "HSBC"
+    wsP.Range("F9:F10").ClearContents
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), 83) & CompareCell(wsT.Range("M2"), "") & _
+                               ExpectNote(report, "信中找不到 Autocall Barrier，留空")
+    Tally "Super Bull（HSBC）沒有 Autocall Barrier → M2 留空並提醒", fails, passCount, total, detail
+
+    ' BARC 的 DACN／Express 也有 Autocall Barrier：不是 Super Bull 時不讀，不影響 KO Barrier
+    PasteBase wsP
+    wsP.Range("Q9").Value = "Autocall Barrier (%)"
+    wsP.Range("Q10").Value = 95
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("M2"), 100)
+    fails = fails & ExpectNoNote(report, "Autocall Barrier")
+    Tally "不是 Super Bull 的 Autocall Barrier → 不讀，M2 照 KO Barrier", fails, passCount, total, detail
+
     PasteBase wsP
     wsP.Range("Q9").Value = "BBG Code 6"
     PutText wsP.Range("Q10"), "AAPL UW"
@@ -659,6 +719,40 @@ Private Sub PasteMSRangeAccrual(ByVal ws As Worksheet)
     ws.Range("C3").Value = "MS"
     PutText ws.Range("A10"), "Range Accrual"
     ws.Range("E9").Value = "Put Strike"
+End Sub
+
+' Super Bull 的寫法：BNP 是 Super Bull Level（E 欄）；HSBC、CA 是 Strike（D 欄）、
+' Autocall Freq（E 欄）、Autocall Barrier（F 欄）、Bonus Coupon（G 欄）
+Private Sub PasteSuperBull(ByVal ws As Worksheet, ByVal issuer As String)
+    Dim headers As Variant, values As Variant
+    Dim i As Long
+
+    OrderFill_Clear
+    ws.Range("C3").Value = issuer
+    PutText ws.Range("A7"), "Initial price: VWAP"
+    PutText ws.Range("A8"), "PG rate: 0%"
+
+    If issuer = "BNP" Then
+        headers = Array("Product", "Currency", "BBG Code 1", "Tenor (m)", "Super Bull Level (%)", _
+                        "Upfront/Note Price (%)", "Autocall Frequency(M)", "Autocall Coupon Flat (%)", _
+                        "Trade Date", "Issue Date", "Redemption Valuation Date", "Redemption Date")
+        values = Array("SuperBull", "USD", "AMD UW", 6, 70, 97, 3, 6.79, _
+                       "2026-10-13", "2026-10-20", "2027-04-20", "2027-04-23")
+    Else
+        headers = Array("Product", "Currency", "BBG Code 1", "Strike (%)", "Autocall Freq (m)", _
+                        "Autocall Barrier (%)", "Bonus Coupon (%,flat)", "Upfront / NotePrice (%)", "Tenor (m)", _
+                        "Strike Date", "Issue Date", "Final Valuation Date", "Maturity Date")
+        values = Array("SuperBull", "USD", "TSM UN", 83, 3, 90, 5.75, 97.5, 6, _
+                       "2026-10-13", "2026-10-20", "2027-04-20", "2027-04-23")
+    End If
+    For i = 0 To UBound(headers)
+        ws.Cells(9, i + 1).Value = headers(i)
+        If VarType(values(i)) = vbString Then
+            PutText ws.Cells(10, i + 1), CStr(values(i))
+        Else
+            ws.Cells(10, i + 1).Value = values(i)
+        End If
+    Next i
 End Sub
 
 ' 直接改 Term 的格子時暫停事件，避免觸發 Term 的 Worksheet_Change（例如跳選 O5）
