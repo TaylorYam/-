@@ -84,8 +84,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Dim guar As Variant, strike As Variant, koBarrier As Variant
     Dim coupon As Variant, notePrice As Variant, upfront As Variant
     Dim tenor As Variant, periods As Variant
-    Dim ki As Variant, pgRate As Variant
-    Dim koType As String, barrierType As String, initPrice As String
+    Dim ki As Variant, pgRate As Variant, accrual As Variant, expressMult As Variant
+    Dim koType As String, barrierType As String, initPrice As String, fixedCpn As String
     Dim ul(1 To 5) As String
     Dim tradeDate As Date, issueDate As Date, finalDate As Date, maturityDate As Date
     Dim hasTrade As Boolean, hasIssue As Boolean, hasFinal As Boolean, hasMaturity As Boolean
@@ -172,15 +172,51 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     ki = NumField("KI", 3)
     pgRate = NumField("PGRATE", 0)
 
-    ' 信中沒有 Product 時不預設；只有 SG 每期固定配息、AutoCall 是單一數字、有 Put Strike 時推定為 FCN
-    If product = "" Then
-        If issuer = "SG" And LCase$(CollapseSpaces(CStr(GetVal("FIXEDCPN")))) = "all periods" _
+    ' 信中沒有 Product 時不預設；只有 SG 的 AutoCall 是單一數字、有 Put Strike 時，
+    ' 依 Fixed Coupons 推定：All Periods（每期固定配息）→ FCN、First Period（只有第一期固定）→ DACN
+    If product = "" And Not IsFlagged("PRODUCT") Then
+        fixedCpn = LCase$(CollapseSpaces(CStr(GetVal("FIXEDCPN"))))
+        If issuer = "SG" And (fixedCpn = "all periods" Or fixedCpn = "first period") _
            And Not IsEmpty(koBarrier) And Not IsEmpty(strike) Then
-            product = "FCN"
-            AddNote "信中沒有 Product，依 SG 條件（Fixed Coupons 是 All Periods、AutoCall 是單一數字、" & _
-                    "有 Put Strike）推定為 FCN，A2 請確認"
+            If fixedCpn = "all periods" Then
+                product = "FCN"
+                fixedCpn = "All Periods"
+            Else
+                product = "DACN"
+                fixedCpn = "First Period"
+            End If
+            AddNote "信中沒有 Product，依 SG 條件（Fixed Coupons 是 " & fixedCpn & "、AutoCall 是單一數字、" & _
+                    "有 Put Strike）推定為 " & product & "，A2 請確認"
         Else
             WarnMissing "PRODUCT"
+        End If
+    End If
+
+    ' MS 的 DACN 寫成 Range Accrual：有 Strike（Put Strike）就是 DACN
+    If issuer = "MS" And product = "Range Accrual" And (mSrc.Exists("STRIKE") Or IsFlagged("STRIKE")) Then
+        product = "DACN"
+        AddNote "MS 的 Product 是 Range Accrual，但有 Strike，判定為 DACN，A2 請確認"
+    End If
+
+    ' Accrual Barrier（MS 的 DACN）沒有對應欄位；和 Strike 不同時提醒，K2 仍填 Strike
+    accrual = NumField("ACCRUALBARRIER", 0)
+    If Not IsEmpty(accrual) And Not IsEmpty(strike) Then
+        If accrual <> strike Then
+            AddNote "Accrual Barrier（" & accrual & "）和 Strike（" & strike & "）不同，K2 填 Strike"
+        End If
+    End If
+
+    ' FCN_Express 從第一期就能 KO：Guaranteed Period 固定 0；倍數欄位沒有對應欄位，不是 1 時提醒
+    If product = "FCN_Express" Then
+        If Not IsEmpty(guar) Then
+            If guar <> 0 Then AddNote "FCN_Express 的 Guaranteed Period 固定 0，信裡是 " & guar & "，E2 填 0"
+        End If
+        guar = 0
+        expressMult = NumField("EXPRESSMULT", 0)
+        If Not IsEmpty(expressMult) Then
+            If expressMult <> 1 Then
+                AddNote FieldLabel("EXPRESSMULT") & " 是 " & expressMult & "，不是 1；Term 沒有這個欄位，請確認條件"
+            End If
         End If
     End If
 
@@ -278,7 +314,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     wsT.Range("R2").Value = barrierType
     wsT.Range("S2").Value = ki
     wsT.Range("T2").Value = pgRate
-    If product = "FCN" Then wsT.Range("V2").Value = 0   ' Floor Coupon：FCN 固定 0，其他產品留空
+    ' Floor Coupon：FCN、DACN、FCN_Express 固定 0，其他產品留空
+    If product = "FCN" Or product = "DACN" Or product = "FCN_Express" Then wsT.Range("V2").Value = 0
 
     wsT.Range("O5").Value = Format$(tradeDate, "yyyy/mm/dd")
     wsT.Range("O9").Value = initPrice
@@ -544,7 +581,8 @@ Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As 
                 Exit Sub
             End If
             key = "D" & CStr(CLng(d))
-        Case "GUAR", "STRIKE", "KOBARRIER", "COUPON", "PRICE", "UPFRONT", "TENOR", "PERIODS", "KI", "PGRATE"
+        Case "GUAR", "STRIKE", "KOBARRIER", "COUPON", "PRICE", "UPFRONT", "TENOR", "PERIODS", "KI", "PGRATE", _
+             "ACCRUALBARRIER", "EXPRESSMULT"
             If Not ParseNumber(v, n, pct) Then
                 FlagField field, FieldLabel(field) & " 格式不認得：" & ShowVal(raw) & "，" & MissingAction(field)
                 Exit Sub
@@ -662,6 +700,8 @@ Private Function FieldLabel(ByVal field As String) As String
         Case "TDCC": FieldLabel = "TDCC"
         Case "INITPRICE": FieldLabel = "期初價格"
         Case "PGRATE": FieldLabel = "PG rate"
+        Case "ACCRUALBARRIER": FieldLabel = "Accrual Barrier"
+        Case "EXPRESSMULT": FieldLabel = "First Period Rebate Multiplier／Express Multiplier"
         Case Else: FieldLabel = field
     End Select
 End Function
@@ -726,6 +766,8 @@ Private Sub BuildHeaderMap()
     AddSyn "TDCC", "tdcc", "tdcccode"
     AddSyn "INITPRICE", "initialprice"
     AddSyn "PGRATE", "pgrate"
+    AddSyn "ACCRUALBARRIER", "accrualbarrier"    ' MS 的 DACN
+    AddSyn "EXPRESSMULT", "firstperiodrebatemultiplier", "expressmultiplier"   ' FCN_Express：BARC、CA
 End Sub
 
 Private Sub AddSyn(ByVal field As String, ParamArray keys() As Variant)
@@ -981,15 +1023,21 @@ Private Function NormTDCC(ByVal v As Variant) As String
     If Len(out) = 12 Then NormTDCC = out
 End Function
 
-' Product 對應到 Variable!D 的寫法；Citi 的 FCA 即 FCN
+' Product 對應到 Variable!D 的寫法；上手各自的寫法先轉換：
+'   Citi 的 FCA → FCN；DAC（多數上手）、DRA（DBS）、VMRAN（UBS）→ DACN；Express FCN → FCN_Express
+' 轉換後不在 Variable!D 的留空並提醒
 Private Function NormProduct(ByVal v As Variant) As String
     Dim s As String
     Dim wsV As Worksheet
     Dim lastRow As Long, r As Long
 
-    s = Trim$(CStr(v))
+    s = CollapseSpaces(CStr(v))
     If s = "" Then Exit Function
-    If UCase$(s) = "FCA" Then s = "FCN"
+    Select Case UCase$(s)
+        Case "FCA": s = "FCN"
+        Case "DAC", "DRA", "VMRAN": s = "DACN"
+        Case "EXPRESS FCN": s = "FCN_Express"
+    End Select
 
     Set wsV = ThisWorkbook.Worksheets("Variable")
     lastRow = wsV.Cells(wsV.Rows.Count, "D").End(xlUp).Row
@@ -999,7 +1047,7 @@ Private Function NormProduct(ByVal v As Variant) As String
             Exit Function
         End If
     Next r
-    NormProduct = s
+    FlagField "PRODUCT", "Product 認不得：" & ShowVal(v) & "，A2 留空"
 End Function
 
 ' KO Type 對應到 Variable!C：Daily / Daily Memory / Period End / Period End Memory（不分大小寫）

@@ -223,6 +223,7 @@ Public Function Test_OrderFill_RulesReport() As String
     Dim report As String, fails As String, detail As String
     Dim passCount As Long, total As Long
     Dim ok As Boolean
+    Dim prod As Variant
 
     Set wsP = ThisWorkbook.Worksheets("起單回填")
     Set wsT = ThisWorkbook.Worksheets("Term")
@@ -393,7 +394,7 @@ Public Function Test_OrderFill_RulesReport() As String
     PutText wsP.Range("Q10"), "Coupon Barrier"
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & ExpectNote(report, "找不到 Product，A2 留空")
-    Tally "SG：Fixed Coupons 不是 All Periods → A2 留空並提醒", fails, passCount, total, detail
+    Tally "SG：Fixed Coupons 不是 All Periods／First Period → A2 留空並提醒", fails, passCount, total, detail
 
     PasteSGNoProduct wsP
     PutText wsP.Range("G10"), "105%/100%/95%"
@@ -450,6 +451,100 @@ Public Function Test_OrderFill_RulesReport() As String
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "FCN") & CompareCell(wsT.Range("V2"), 0)
     Tally "SG 推定為 FCN → V2 填 0", fails, passCount, total, detail
+
+    ' DACN、FCN_Express（#16）
+    For Each prod In Array("DAC", "DRA", "VMRAN", "dacn")
+        PasteBase wsP
+        PutText wsP.Range("A10"), CStr(prod)
+        SetTermCell wsT.Range("V2"), Empty
+        fails = RunFill(report)
+        If fails = "" Then fails = CompareCell(wsT.Range("A2"), "DACN") & CompareCell(wsT.Range("V2"), 0)
+        Tally "Product " & prod & " → DACN、V2 填 0", fails, passCount, total, detail
+    Next prod
+
+    PasteBase wsP
+    PutText wsP.Range("A10"), "XYZ Note"
+    SetTermCell wsT.Range("V2"), 0
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "") & CompareCell(wsT.Range("V2"), "") & _
+                               ExpectNote(report, "Product 認不得：XYZ Note，A2 留空")
+    If InStr(report, "找不到 Product") > 0 Then fails = fails & "  不應再提醒找不到 Product" & vbCrLf
+    Tally "Product 不在對照表與 Variable 清單 → A2 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A10"), "Express FCN"
+    wsP.Range("C9:C10").ClearContents
+    SetTermCell wsT.Range("V2"), Empty
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "FCN_Express") & CompareCell(wsT.Range("E2"), 0) & _
+                               CompareCell(wsT.Range("V2"), 0)
+    If InStr(report, "Guaranteed Period") > 0 Then fails = fails & "  不應提醒 Guaranteed Period：" & Replace(report, vbCrLf, " ") & vbCrLf
+    Tally "Express FCN → FCN_Express、沒有 Guaranteed Period 時 E2 填 0、V2 填 0", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A10"), "Express FCN"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), 0) & ExpectNote(report, "Guaranteed Period 固定 0，信裡是 1")
+    Tally "FCN_Express 信裡 Guaranteed Period 是 1 → E2 仍填 0 並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A10"), "Express FCN"
+    wsP.Range("Q9").Value = "First Period Rebate Multiplier"
+    wsP.Range("Q10").Value = 1.5
+    fails = RunFill(report)
+    If fails = "" Then fails = ExpectNote(report, "是 1.5，不是 1")
+    Tally "FCN_Express 倍數不是 1（BARC）→ 提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A10"), "Express FCN"
+    wsP.Range("Q9").Value = "Express Multiplier"
+    wsP.Range("Q10").Value = 1
+    fails = RunFill(report)
+    If fails = "" And InStr(report, "不是 1") > 0 Then fails = "  倍數是 1 不應提醒：" & Replace(report, vbCrLf, " ") & vbCrLf
+    Tally "FCN_Express 倍數是 1（CA）→ 不提醒", fails, passCount, total, detail
+
+    PasteMSRangeAccrual wsP
+    SetTermCell wsT.Range("V2"), Empty
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "DACN") & CompareCell(wsT.Range("K2"), 80) & _
+                               CompareCell(wsT.Range("V2"), 0) & ExpectNote(report, "判定為 DACN")
+    Tally "MS：Range Accrual 有 Put Strike → DACN 並提醒", fails, passCount, total, detail
+
+    PasteMSRangeAccrual wsP
+    wsP.Range("E9:E10").ClearContents
+    SetTermCell wsT.Range("V2"), 0
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual") & CompareCell(wsT.Range("V2"), "")
+    Tally "MS：Range Accrual 沒有 Strike → 照填 Range Accrual", fails, passCount, total, detail
+
+    PasteMSRangeAccrual wsP
+    wsP.Range("C3").Value = "BARC"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual")
+    Tally "不是 MS 的 Range Accrual → 照填，不判定 DACN", fails, passCount, total, detail
+
+    PasteMSRangeAccrual wsP
+    wsP.Range("Q9").Value = "Accrual Barrier"
+    PutText wsP.Range("Q10"), "65.00%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), 80) & _
+                               ExpectNote(report, "Accrual Barrier（65）和 Strike（80）不同，K2 填 Strike")
+    Tally "MS：Accrual Barrier 和 Put Strike 不同 → K2 填 Put Strike 並提醒", fails, passCount, total, detail
+
+    PasteMSRangeAccrual wsP
+    wsP.Range("Q9").Value = "Accrual Barrier"
+    PutText wsP.Range("Q10"), "80.00%"
+    fails = RunFill(report)
+    If fails = "" And InStr(report, "Accrual Barrier") > 0 Then fails = "  相同時不應提醒：" & Replace(report, vbCrLf, " ") & vbCrLf
+    Tally "MS：Accrual Barrier 和 Put Strike 相同 → 不提醒", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    PutText wsP.Range("Q10"), "First Period"
+    SetTermCell wsT.Range("V2"), Empty
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "DACN") & CompareCell(wsT.Range("V2"), 0) & _
+                               ExpectNote(report, "Fixed Coupons 是 First Period") & ExpectNote(report, "推定為 DACN")
+    Tally "SG：Fixed Coupons 是 First Period → 推定 DACN 並提醒", fails, passCount, total, detail
 
     ' SG 的 Quote ? 欄值是 "Strike"：數值列的值不能當成左右一組的標題（#14）
     PasteSGNoProduct wsP
@@ -549,6 +644,14 @@ Private Sub PasteSGNoProduct(ByVal ws As Worksheet)
     ws.Range("G9").Value = "AutoCall"
     ws.Range("Q9").Value = "Fixed Coupons"
     PutText ws.Range("Q10"), "All Periods"
+End Sub
+
+' MS 的 DACN 寫法：Product 是 Range Accrual，E 欄 Put Strike
+Private Sub PasteMSRangeAccrual(ByVal ws As Worksheet)
+    PasteBase ws
+    ws.Range("C3").Value = "MS"
+    PutText ws.Range("A10"), "Range Accrual"
+    ws.Range("E9").Value = "Put Strike"
 End Sub
 
 ' 直接改 Term 的格子時暫停事件，避免觸發 Term 的 Worksheet_Change（例如跳選 O5）

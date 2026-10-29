@@ -8,11 +8,11 @@
 
 ## 繁體中文
 
-把上手回覆的起單信件貼到「起單回填」工作表，按「填入」回填 `Term!A2:T2`、`Term!V2` 與 `Term!O5:O9`；按「清空」清掉貼上區，再貼下一封。原始碼在 `src/vba/`。
+把上手回覆的起單信件貼到「起單回填」工作表，按「填入」回填 `Term!A2:T2`、`Term!V2` 與 `Term!O5:O9`；按「清空」清掉貼上區，再貼下一封。支援 FCN、DACN、FCN_Express 的起單信。原始碼在 `src/vba/`。
 
 ### 安裝
 
-repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內建 `OrderFill`、`OrderFillTest` 模組與「起單回填」工作表，開啟即可使用。
+repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內建 `OrderFill` 模組與「起單回填」工作表，開啟即可使用。測試模組 `OrderFillTest` 只內建在 `Generator_20261005.xlsm`。
 
 用在其他活頁簿，或模組改版後要更新時：
 
@@ -60,8 +60,12 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - Note Price：沒有 Note Price、只有 `Upfront (%)`（Citi）時，Note Price = 100 − Upfront。
 - Citi 特例：Guaranteed Period = Non Callable Periods + 1。
 - 標的超過 5 檔時提醒（`Term` 只放得下 5 檔）。
-- 信中沒有 Product 時不預設，A2 留空並提醒。只有 SG 例外：`Fixed Coupons` 是 `All Periods`、`AutoCall` 是單一數字、而且有 `Put Strike`，三項都符合時推定為 `FCN`，並提醒確認。目前只有一封 SG 的 FCN 樣本，無法確認 SG 其他類似產品（例如 `FCN_Stepdown`）的信不會也符合條件，所以推定後請一定核對 A2；如果改成其他產品，V2 的 0 不會自動清掉，請一併清空。
-- Floor Coupon（V2）：A2 是 `FCN`（包含 SG 推定、Citi 的 `FCA`）時填 0；其他產品（包含 `FCN_Stepdown` 等變體）或 A2 留空時清空，避免上一筆的值留到下一筆。
+- Product 一律看信的內文，不看主旨。上手各自的寫法先轉換成 `Variable!D` 的商品名稱（不分大小寫）：Citi 的 `FCA` → `FCN`；`DAC`（BARC、BNP、CA、Nomura、Natixis 等）、`DRA`（DBS）、`VMRAN`（UBS）→ `DACN`；`Express FCN`（BARC、CA）→ `FCN_Express`。轉換後不在 `Variable!D` 清單上的，A2 留空並提醒原文。
+- MS 的 DACN 信 Product 寫 `Range Accrual`：有 Strike（MS 的 `Put Strike`）時判定為 `DACN`，並提醒確認 A2；沒有 Strike 時照填 `Range Accrual`。其他上手的 `Range Accrual` 照填。
+- `Accrual Barrier`（MS 的 DACN）在 `Term` 沒有對應欄位：和 Strike 不同時提醒，K2 仍填 Strike。
+- FCN_Express：E2（Guaranteed Period）固定填 0，信裡有不是 0 的值時提醒。`First Period Rebate Multiplier`（BARC）／`Express Multiplier`（CA）在 `Term` 沒有對應欄位，值不是 1 時提醒。
+- 信中沒有 Product 時不預設，A2 留空並提醒。只有 SG 例外：`AutoCall` 是單一數字、有 `Put Strike`，而且 `Fixed Coupons` 是 `All Periods` 時推定為 `FCN`、是 `First Period` 時推定為 `DACN`，並提醒確認。SG 的樣本只有一封 FCN 和幾封 DACN，無法確認 SG 其他類似產品（例如 `FCN_Stepdown`）的信不會也符合條件，所以推定後請一定核對 A2；如果改成其他產品，V2 的 0 不會自動清掉，請一併清空。
+- Floor Coupon（V2）：A2 是 `FCN`、`DACN` 或 `FCN_Express`（包含 SG 推定、Citi 的 `FCA`、MS 判定的 DACN）時填 0；其他產品（包含 `FCN_Stepdown` 等變體）或 A2 留空時清空，避免上一筆的值留到下一筆。
 - 信中沒有 Trade date 時 O5 填今天。
 - Issue／Final／Maturity date 沒有時，沿用 `Term` 既有邏輯推算，並提醒。
 - 期初價格：Opening → 開盤價；Closing → 收盤價；VWAP → VWAP；其他寫法留空並提醒。
@@ -70,7 +74,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 ### 測試
 
-在活頁簿**複本**執行以下測試（repo 的 `.xlsm` 已內建 `OrderFillTest`；其他活頁簿要先匯入 `OrderFillTest.bas`）：
+在活頁簿**複本**執行以下測試（`Generator_20261005.xlsm` 已內建 `OrderFillTest`；其他活頁簿要先匯入 `OrderFillTest.bas`）：
 
 - `Test_OrderFill_AllIssuers`：把 `起單信件格式.xlsx` 的 14 張上手表逐一貼入、填入，再和 ELN每日起單建檔中同一 TDCC 的紀錄比對；接著跑規則測試。
 - `Test_OrderFill_Rules`：只跑規則測試（不需要樣本檔），在貼上區寫入合成的信件內容，逐條檢查上面的回填規則。
@@ -82,11 +86,11 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 ## English
 
-Paste an issuer's order reply mail into the `起單回填` sheet and press **填入** (Fill) to populate `Term!A2:T2`, `Term!V2`, and `Term!O5:O9`. Press **清空** (Clear) to clear the paste area before pasting the next mail. Source code is in `src/vba/`.
+Paste an issuer's order reply mail into the `起單回填` sheet and press **填入** (Fill) to populate `Term!A2:T2`, `Term!V2`, and `Term!O5:O9`. Press **清空** (Clear) to clear the paste area before pasting the next mail. Order mails for FCN, DACN, and FCN_Express are supported. Source code is in `src/vba/`.
 
 ### Installation
 
-The repository's `特別約定事項&高齡適合度聲明書Generator_*.xlsm` already contains the `OrderFill` and `OrderFillTest` modules and the `起單回填` sheet, so it works as soon as it is opened.
+The repository's `特別約定事項&高齡適合度聲明書Generator_*.xlsm` already contains the `OrderFill` module and the `起單回填` sheet, so it works as soon as it is opened. The test module `OrderFillTest` is included only in `Generator_20261005.xlsm`.
 
 To use it in another workbook, or to update after the modules change:
 
@@ -134,8 +138,12 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - Note Price: when there is no Note Price but only `Upfront (%)` (Citi), Note Price = 100 − Upfront.
 - Citi special case: Guaranteed Period = Non Callable Periods + 1.
 - More than 5 underlyings triggers a warning (`Term` holds only 5).
-- When the mail has no Product, nothing is assumed: A2 is left blank with a warning. SG is the only exception: when `Fixed Coupons` is `All Periods`, `AutoCall` is a single number, and there is a `Put Strike`, the product is inferred as `FCN` with a warning to confirm it. Only one SG FCN sample is available, so it is not known whether mails for similar SG products (such as `FCN_Stepdown`) also meet these conditions; always check A2 after an inference. If you change it to another product, the 0 in V2 is not cleared automatically, so clear it as well.
-- Floor Coupon (V2): 0 when A2 is `FCN` (including the SG inference and Citi's `FCA`); cleared for any other product (including variants such as `FCN_Stepdown`) or when A2 is blank, so a previous trade's value is not carried over.
+- Product always comes from the mail body, never the subject. Each issuer's wording is first converted to a product name in `Variable!D` (case-insensitive): Citi's `FCA` → `FCN`; `DAC` (BARC, BNP, CA, Nomura, Natixis, and others), `DRA` (DBS), and `VMRAN` (UBS) → `DACN`; `Express FCN` (BARC, CA) → `FCN_Express`. A product that is still not in the `Variable!D` list after conversion leaves A2 blank, and the warning shows the original text.
+- MS writes `Range Accrual` as the Product of a DACN mail: when there is a Strike (MS's `Put Strike`), the product is taken as `DACN` with a warning to confirm A2; without a Strike, `Range Accrual` is written as is. `Range Accrual` from other issuers is written as is.
+- `Accrual Barrier` (MS's DACN) has no column in `Term`: a warning appears when it differs from Strike, and K2 still gets Strike.
+- FCN_Express: E2 (Guaranteed Period) is always 0, with a warning when the mail has a non-zero value. `First Period Rebate Multiplier` (BARC) / `Express Multiplier` (CA) has no column in `Term`; a value other than 1 triggers a warning.
+- When the mail has no Product, nothing is assumed: A2 is left blank with a warning. SG is the only exception: when `AutoCall` is a single number and there is a `Put Strike`, the product is inferred as `FCN` if `Fixed Coupons` is `All Periods` and as `DACN` if it is `First Period`, with a warning to confirm it. Only one SG FCN sample and a few SG DACN samples are available, so it is not known whether mails for similar SG products (such as `FCN_Stepdown`) also meet these conditions; always check A2 after an inference. If you change it to another product, the 0 in V2 is not cleared automatically, so clear it as well.
+- Floor Coupon (V2): 0 when A2 is `FCN`, `DACN`, or `FCN_Express` (including the SG inference, Citi's `FCA`, and MS's DACN); cleared for any other product (including variants such as `FCN_Stepdown`) or when A2 is blank, so a previous trade's value is not carried over.
 - When the mail has no Trade date, O5 is set to today.
 - Missing Issue / Final / Maturity dates are calculated by the existing `Term` logic, with a warning.
 - Initial price: Opening → 開盤價; Closing → 收盤價; VWAP → VWAP; any other value is left blank with a warning.
@@ -144,7 +152,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 
 ### Testing
 
-Run these tests in a **copy** of the workbook (the repository's `.xlsm` already contains `OrderFillTest`; import `OrderFillTest.bas` into other workbooks first):
+Run these tests in a **copy** of the workbook (`Generator_20261005.xlsm` already contains `OrderFillTest`; import `OrderFillTest.bas` into other workbooks first):
 
 - `Test_OrderFill_AllIssuers`: pastes each of the 14 issuer sheets in `起單信件格式.xlsx`, runs the fill, and compares the result with the record for the same TDCC in ELN每日起單建檔; then runs the rule tests.
 - `Test_OrderFill_Rules`: runs only the rule tests (no sample file needed), writing synthetic mail content into the paste area to check each fill rule above.
