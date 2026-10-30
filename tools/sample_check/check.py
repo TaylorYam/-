@@ -118,7 +118,9 @@ RA_COUPON = 'couponcouponfrequencycallablefrequency'   # 玉山詢價格式的�
 
 
 def ra_noncall(t):
-    """Range Accrual 的 Non-call（月）：Non call period (Y) × 12；NC 1Y*3M、NC 0.25Y X 3M、1Y 取 NC 後面的期間"""
+    """Range Accrual 的 Non-call（月）：Non call period (Y) × 12；NC 1Y*3M、NC 0.25Y X 3M、1Y 取 NC 後面的期間。
+    Is Callable 是 No、或不是整月數時工具留空"""
+    if pick(t, 'iscallable').lower() == 'no': return None
     y = num(pick(t, 'noncallperiody'))
     if y is not None: m = y * 12
     else:
@@ -130,23 +132,28 @@ def ra_noncall(t):
 
 
 def ra_underlying(t):
+    """只有 USD SOFR CMS 10Y、USD CMT 10Y；rate 前面只能有 USD、SOFR 或條件符號（EUR CMS 10Y 不算）"""
     v = re.sub(r'\s+', '', pick(t, 'underlying', 'index', 'condition1')).upper()
     n = len(re.findall(r'CMS|CMT', v))
-    if v == 'USS10Y' or (n == 1 and 'CMS10Y' in v): return 'USD SOFR CMS 10Y'
-    if v == 'UCMT10' or (n == 1 and 'CMT10Y' in v): return 'USD CMT 10Y'
+    def usd(rate): return n == 1 and re.search(r'(?:^|[^A-Z])(?:USD)?(?:SOFR)?' + rate, v) is not None
+    if v == 'USS10Y' or usd('CMS10Y'): return 'USD SOFR CMS 10Y'
+    if v == 'UCMT10' or usd('CMT10Y'): return 'USD CMT 10Y'
     return ''
 
 
 def ra_tenor(t):
     y = num(pick(t, 'tenory'))
     if y is not None: return y
-    g = re.fullmatch(r'(\d+(?:\.\d+)?)Y', re.sub(r'\s+', '', pick(t, 'tenor')).upper())
+    g = re.fullmatch(r'(\d+(?:\.\d+)?)Y', re.sub(r'\s+', '', pick(t, 'tenorm', 'tenor', 'tenormonths')).upper())
     return num(g[1]) if g else None
 
 
 def ra_floor(t):
-    g = re.search(r'(?i)floor\s*@?\s*([\d.]+)', t.get(RA_COUPON, ''))
-    return num(g[1]) if g else 0
+    """Floor@ 的值；沒有 Floor 填 0，Floor 後面讀不到數字時工具留空"""
+    c = t.get(RA_COUPON, '')
+    if not re.search(r'(?i)floor', c): return 0
+    g = re.search(r'(?i)floor\s*@?\s*(\d+(?:\.\d+)?)', c)
+    return num(g[1]) if g else None
 
 
 def ko_type(t, issuer):

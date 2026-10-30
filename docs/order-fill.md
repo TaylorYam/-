@@ -52,7 +52,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - 數值欄位有逗號時不認，留空並提醒原文。例如 `105%, 100%`（列出多個值）、`98,50%`（逗號當小數點）。這些欄位都是百分比、月數或期數，不會用到千分位。
 - 改價取最後的值並提醒：`96.20%→96.15%`、`99.65->99.62`、`99.65=>99.62`、`99.92 >> 99.89`、`99.92 > 99.89`。
 - 日期另認 `20Oct26`、`15-Oct-26`、`20-Oct-2026`、`20 Oct 2026`。
-- 年期填月數，`Q2 = M`（Range Accrual 例外，見下）。Tenor 寫成年（例：`5Y`）時 P2 留空並提醒。SG 沒有 Tenor：`Settlement Frequency` 是 `Monthly` 時 Tenor = `No. of Periods`，否則留空並提醒。
+- 年期填月數，`Q2 = M`（Range Accrual 例外，見下）。Tenor 寫成年（例：`5Y`）時 P2 留空並提醒；同一封信另有月數的 Tenor 時，兩個值算不一致。SG 沒有 Tenor：`Settlement Frequency` 是 `Monthly` 時 Tenor = `No. of Periods`，否則留空並提醒。
 - KO Type 只認 `Daily`、`Daily Memory`、`Period End`、`Period End Memory`（不分大小寫）：
   - MS：`OBSERVATION` 是每期觀察，由 `KO Memory`（Yes／No）決定是否記憶式；KO Memory 空白、或和 KO Type 矛盾（例：`Daily Memory` 但 `No`）時留空並提醒。
   - Citi：由 `Daily KO`、`Memory Autocall` 兩欄 TRUE／FALSE 判斷。
@@ -60,7 +60,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - Barrier Type 對應到 `AKI`／`MKI`／`EKI`／`NONE`：`European`、`At Maturity` → `EKI`，`American` → `AKI`，`No` → `NONE`；其他寫法留空並提醒原文。
   - Barrier Type 與 KI 都沒有（或是 `N/A`）、但條件表有讀到時填 `NONE`（例：SG）。
   - `NONE` 時 KI 留空；KI 有非 0 的值時提醒。
-- Note Price：沒有 Note Price、只有 `Upfront (%)`（Citi）或 `UF`（玉山詢價格式）時，Note Price = 100 − Upfront。
+- Note Price：沒有 Note Price、只有 `Upfront (%)`（Citi）時，Note Price = 100 − Upfront。
 - Citi 特例：Guaranteed Period = Non Callable Periods + 1。
 - 標的超過 5 檔時提醒（`Term` 只放得下 5 檔）。
 - Product 一律看信的內文，不看主旨。上手各自的寫法先轉換成 `Variable!D` 的商品名稱（不分大小寫）：Citi 的 `FCA` → `FCN`；`DAC`（BARC、BNP、CA、Nomura、Natixis 等）、`DRA`（DBS）、`VMRAN`（UBS）→ `DACN`；`Express FCN`（BARC、CA）→ `FCN_Express`；`SuperBull`（BNP、HSBC）→ `Super Bull`；`BEN`、`BEN WITH LOOKBACK`（MS）→ `Regular BEN`；`Digital Note`（CA）、`DCN`（SG）、`DIGIT`／`DIGIT WITH LOOKBACK`（MS）、`Bonus RCN`（HSBC）→ `Digital BEN`；`TW DRA`（BNP）、`RATES CRAN`／`RATES AUTOCALL RAN`（SG）→ `Range Accrual`。轉換後不在 `Variable!D` 清單上的，A2 留空並提醒原文。
@@ -80,15 +80,15 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
   - `Participation`、`Lookback Period` 在 `Term` 沒有對應欄位，不讀。
   - HSBC、BNP 的 BEN 信沒有 TDCC，上手由表頭判斷（見下一條）。
 - 保本型商品（E5 下拉選單，目前只有 `Range Accrual`）：
-  - E5 有選時，A2 = 選的商品。信裡的 Product 是別的商品（包含 MS 判定的 DACN）或認不得時不填入，`Term` 不變。
+  - E5 有選時，A2 = 選的商品。信裡的 Product 是別的商品（包含 MS 判定的 DACN）或認不得，或信裡沒有 Product 也沒有 RA 才有的欄位時，不填入，`Term` 不變。
   - E5 沒選、但信看起來是 Range Accrual 時不填入，`Term` 不變，請選好再填。看起來是 Range Accrual：Product 轉換後是 `Range Accrual`，或有 RA 才有的欄位（玉山詢價格式的 `Coupon frequency=Callable frequency`、BNP 的 `DRA coupon (%)`、BARC 的 `RA Rate`）。
 - Range Accrual 只填 A～F、O～Q、T、V；G～N、R、S、O9 留空，也不提醒找不到 Strike、KO、Coupon、Barrier Type、KI、期初價格：
-  - E2（Non-call，月）：BNP 的 `Non call period (Y)` × 12；玉山詢價格式的 `Call Feature`（GS 的 autocall 是 `Autocall Feature`）、BARC 的 `NC` 取 `NC` 後面的期間：`NC 1Y*3M` → 12、`NC 3M*3M` → 3、`NC 0.25Y X 3M` → 3、`1Y` → 12。BNP 的 `Is Callable` 是 `No`，或不是整月數時留空並提醒。
-  - F2：只有 `RA Mapping.xlsx` 裡的兩種。連 CMS → `USD SOFR CMS 10Y`（信裡寫 `USD SOFR CMS 10Y ≦ 5.0%`、BNP 的 `USS10Y`、BARC 的 `CMS10Y`）；連 CMT → `USD CMT 10Y`（`USD CMT 10Y`、BNP 的 `UCMT10`）。其他（例：CA 的股權連結 `TSM UN ≧ 75%`）留空並提醒。標的讀 `Underlying`（BNP）、`Index`（BARC）、`Condition_1`（玉山詢價格式）。
-  - O2：`Upfront/Note Price (%)`（BNP）、`Reoffer`（BARC）；玉山詢價格式只有 `UF`，O2 = 100 − UF。
-  - P2：Tenor（年），`Q2 = Y`。讀 `Tenor (Y)`（BNP、玉山詢價格式），BARC 的 `Tenor` 寫成 `5Y`。
+  - E2（Non-call，月）：BNP 的 `Non call period (Y)` × 12；玉山詢價格式的 `Call Feature`（GS 的 autocall 是 `Autocall Feature`）、BARC 的 `NC` 取 `NC` 後面的期間：`NC 1Y*3M` → 12、`NC 3M*3M` → 3、`NC 0.25Y X 3M` → 3、`1Y` → 12。BNP 的 `Is Callable` 是 `No`、寫法認不得或不是整月數時留空並提醒；信裡沒有這些欄位時留空並提醒找不到。
+  - F2：只有 `RA Mapping.xlsx` 裡的兩種。連 CMS → `USD SOFR CMS 10Y`（信裡寫 `USD SOFR CMS 10Y ≦ 5.0%`、BNP 的 `USS10Y`、BARC 的 `CMS10Y`）；連 CMT → `USD CMT 10Y`（`USD CMT 10Y`、BNP 的 `UCMT10`）。其他（例：CA 的股權連結 `TSM UN ≧ 75%`、不是美元的 `EUR CMS 10Y`）留空並提醒。標的讀 `Underlying`（BNP）、`Index`（BARC）、`Condition_1`（玉山詢價格式）。
+  - O2：`Upfront/Note Price (%)`（BNP）、`Reoffer`（BARC）；玉山詢價格式只有 `UF`，O2 = 100 − UF（只有 Range Accrual 讀 `UF`）。
+  - P2：Tenor（年），`Q2 = Y`。讀 `Tenor (Y)`（BNP、玉山詢價格式），BARC 的 `Tenor` 寫成 `5Y`；`Tenor` 沒有寫 `Y` 時留空並提醒。
   - T2：`PG rate`，和其他商品相同。
-  - V2：玉山詢價格式的配息欄有 `Floor@ 2.5%` 時填該值，沒有填 0；BNP、BARC 填 0。配息在信裡拆成兩列（`Y1 : 8% p.a. fixed`／`Y2+ : 6% x n/N p.a, Floor@ 2.5%`），工具會接著讀同一欄下面的列。
+  - V2：玉山詢價格式的配息欄有 `Floor@ 2.5%` 時填該值，沒有 Floor 填 0，有 Floor 但讀不到數字時留空並提醒；BNP、BARC 填 0。配息在信裡拆成兩列（`Y1 : 8% p.a. fixed`／`Y2+ : 6% x n/N p.a, Floor@ 2.5%`），工具會接著讀同一欄下面的列。
   - Autocall（GS 的 `Autocall Barrier`）、Target redemption（JPM）、`TARN Level`（BNP）不填入 M2。
   - 玉山詢價格式（CA、GS、JPM、SG、Nomura）沒有 TDCC 欄位，也沒有上手的表頭特徵，要在 C3 選上手。BARC 的上手由 `RA Rate` 判斷（BARC 的 RA 信也有 `Reoffer`，所以比 CA 先比）。
 - 隨 BEN 新增、所有商品都適用的表頭：`CCY`（Currency）、`Issue Price (%)`（Note Price）、`Tenor (Months)`（Tenor）；上手的表頭特徵另認 HSBC 的 `Comment/Remarks` 加 `ID`、BNP 的 `Strategy Code`。
@@ -211,7 +211,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - A numeric field containing a comma is not recognized; it is left blank and the warning shows the original text. Examples: `105%, 100%` (several values listed) and `98,50%` (comma as decimal point). These fields are percentages, months, or period counts, so they never need thousands separators.
 - Revised values take the last value, with a warning: `96.20%→96.15%`, `99.65->99.62`, `99.65=>99.62`, `99.92 >> 99.89`, `99.92 > 99.89`.
 - Dates also accept `20Oct26`, `15-Oct-26`, `20-Oct-2026`, and `20 Oct 2026`.
-- Tenor is written in months, with `Q2 = M` (Range Accrual is the exception; see below). A Tenor written in years (for example `5Y`) leaves P2 blank with a warning. SG has no Tenor: when `Settlement Frequency` is `Monthly`, Tenor = `No. of Periods`; otherwise it is left blank with a warning.
+- Tenor is written in months, with `Q2 = M` (Range Accrual is the exception; see below). A Tenor written in years (for example `5Y`) leaves P2 blank with a warning; when the same mail also has a Tenor in months, the two values count as inconsistent. SG has no Tenor: when `Settlement Frequency` is `Monthly`, Tenor = `No. of Periods`; otherwise it is left blank with a warning.
 - KO Type accepts only `Daily`, `Daily Memory`, `Period End`, and `Period End Memory` (case-insensitive):
   - MS: `OBSERVATION` means period-end observation, and `KO Memory` (Yes / No) decides memory. A blank KO Memory, or one that contradicts KO Type (for example, `Daily Memory` with `No`), leaves it blank with a warning.
   - Citi: derived from the TRUE / FALSE columns `Daily KO` and `Memory Autocall`.
@@ -219,7 +219,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - Barrier Type is mapped to `AKI` / `MKI` / `EKI` / `NONE`: `European` and `At Maturity` → `EKI`, `American` → `AKI`, `No` → `NONE`. Any other value is left blank, and the warning shows the original text.
   - When both Barrier Type and KI are absent (or `N/A`) but the term table was read, `NONE` is used (for example, SG).
   - KI is left blank for `NONE`; a non-zero KI triggers a warning.
-- Note Price: when there is no Note Price but only `Upfront (%)` (Citi) or `UF` (E.SUN's quote template), Note Price = 100 − Upfront.
+- Note Price: when there is no Note Price but only `Upfront (%)` (Citi), Note Price = 100 − Upfront.
 - Citi special case: Guaranteed Period = Non Callable Periods + 1.
 - More than 5 underlyings triggers a warning (`Term` holds only 5).
 - Product always comes from the mail body, never the subject. Each issuer's wording is first converted to a product name in `Variable!D` (case-insensitive): Citi's `FCA` → `FCN`; `DAC` (BARC, BNP, CA, Nomura, Natixis, and others), `DRA` (DBS), and `VMRAN` (UBS) → `DACN`; `Express FCN` (BARC, CA) → `FCN_Express`; `SuperBull` (BNP, HSBC) → `Super Bull`; `BEN` and `BEN WITH LOOKBACK` (MS) → `Regular BEN`; `Digital Note` (CA), `DCN` (SG), `DIGIT` / `DIGIT WITH LOOKBACK` (MS), and `Bonus RCN` (HSBC) → `Digital BEN`; `TW DRA` (BNP) and `RATES CRAN` / `RATES AUTOCALL RAN` (SG) → `Range Accrual`. A product that is still not in the `Variable!D` list after conversion leaves A2 blank, and the warning shows the original text.
@@ -239,15 +239,15 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
   - `Participation` and `Lookback Period` have no column in `Term` and are not read.
   - HSBC and BNP BEN mails have no TDCC, so the issuer is detected from the headers (see the next item).
 - Principal-protected products (E5 drop-down, currently only `Range Accrual`):
-  - When E5 is picked, A2 = the picked product. If the mail's Product is another product (including MS's DACN) or is not recognized, nothing is filled and `Term` is unchanged.
+  - When E5 is picked, A2 = the picked product. If the mail's Product is another product (including MS's DACN) or is not recognized, or the mail has neither a Product nor a field only RA mails have, nothing is filled and `Term` is unchanged.
   - When E5 is blank but the mail looks like a Range Accrual, nothing is filled and `Term` is unchanged; pick E5 and fill again. A mail looks like a Range Accrual when its Product converts to `Range Accrual`, or it has a field only RA mails have (`Coupon frequency=Callable frequency` in E.SUN's quote template, BNP's `DRA coupon (%)`, BARC's `RA Rate`).
 - Range Accrual fills only A–F, O–Q, T, and V. G–N, R, S, and O9 stay blank, with no missing Strike, KO, Coupon, Barrier Type, KI, or initial price warning:
-  - E2 (non-call, months): BNP's `Non call period (Y)` × 12. For E.SUN's quote template `Call Feature` (GS's autocall uses `Autocall Feature`) and BARC's `NC`, the period after `NC` is used: `NC 1Y*3M` → 12, `NC 3M*3M` → 3, `NC 0.25Y X 3M` → 3, `1Y` → 12. When BNP's `Is Callable` is `No`, or the result is not a whole number of months, E2 is left blank with a warning.
-  - F2: only the two underlyings in `RA Mapping.xlsx`. CMS-linked → `USD SOFR CMS 10Y` (written `USD SOFR CMS 10Y ≦ 5.0%`, BNP's `USS10Y`, or BARC's `CMS10Y`); CMT-linked → `USD CMT 10Y` (`USD CMT 10Y` or BNP's `UCMT10`). Anything else (for example CA's equity-linked `TSM UN ≧ 75%`) is left blank with a warning. The underlying is read from `Underlying` (BNP), `Index` (BARC), or `Condition_1` (E.SUN's quote template).
-  - O2: `Upfront/Note Price (%)` (BNP) or `Reoffer` (BARC). E.SUN's quote template has only `UF`, so O2 = 100 − UF.
-  - P2: Tenor in years, with `Q2 = Y`. It is read from `Tenor (Y)` (BNP, E.SUN's quote template); BARC writes `Tenor` as `5Y`.
+  - E2 (non-call, months): BNP's `Non call period (Y)` × 12. For E.SUN's quote template `Call Feature` (GS's autocall uses `Autocall Feature`) and BARC's `NC`, the period after `NC` is used: `NC 1Y*3M` → 12, `NC 3M*3M` → 3, `NC 0.25Y X 3M` → 3, `1Y` → 12. When BNP's `Is Callable` is `No`, the value is not recognized, or the result is not a whole number of months, E2 is left blank with a warning; when the mail has none of these fields, E2 is left blank with a missing-field warning.
+  - F2: only the two underlyings in `RA Mapping.xlsx`. CMS-linked → `USD SOFR CMS 10Y` (written `USD SOFR CMS 10Y ≦ 5.0%`, BNP's `USS10Y`, or BARC's `CMS10Y`); CMT-linked → `USD CMT 10Y` (`USD CMT 10Y` or BNP's `UCMT10`). Anything else (for example CA's equity-linked `TSM UN ≧ 75%`, or a non-USD rate such as `EUR CMS 10Y`) is left blank with a warning. The underlying is read from `Underlying` (BNP), `Index` (BARC), or `Condition_1` (E.SUN's quote template).
+  - O2: `Upfront/Note Price (%)` (BNP) or `Reoffer` (BARC). E.SUN's quote template has only `UF`, so O2 = 100 − UF (`UF` is read only for Range Accrual).
+  - P2: Tenor in years, with `Q2 = Y`. It is read from `Tenor (Y)` (BNP, E.SUN's quote template); BARC writes `Tenor` as `5Y`; a `Tenor` without `Y` is left blank with a warning.
   - T2: `PG rate`, as for other products.
-  - V2: when the coupon in E.SUN's quote template has `Floor@ 2.5%`, that value; otherwise 0. BNP and BARC get 0. The coupon is split over two rows in the mail (`Y1 : 8% p.a. fixed` / `Y2+ : 6% x n/N p.a, Floor@ 2.5%`), and the tool reads on down the same column.
+  - V2: when the coupon in E.SUN's quote template has `Floor@ 2.5%`, that value; 0 when there is no Floor; blank with a warning when there is a Floor but no readable number. BNP and BARC get 0. The coupon is split over two rows in the mail (`Y1 : 8% p.a. fixed` / `Y2+ : 6% x n/N p.a, Floor@ 2.5%`), and the tool reads on down the same column.
   - Autocall (GS's `Autocall Barrier`), Target redemption (JPM), and `TARN Level` (BNP) are not written to M2.
   - E.SUN's quote template (CA, GS, JPM, SG, Nomura) has no TDCC field and no issuer header signature, so pick the issuer in C3. BARC is detected by `RA Rate` (BARC's RA mails also have `Reoffer`, so this is checked before CA).
 - Headers added with BEN that apply to every product: `CCY` (Currency), `Issue Price (%)` (Note Price), and `Tenor (Months)` (Tenor). Issuer detection also recognises HSBC's `Comment/Remarks` with `ID` and BNP's `Strategy Code`.

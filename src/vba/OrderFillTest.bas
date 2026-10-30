@@ -609,6 +609,49 @@ Public Function Test_OrderFill_RulesReport() As String
     If ok Then fails = fails & "  應該不填入" & vbCrLf
     Tally "RA（BARC）有 RA Rate、沒選保本型商品 → 不填入", fails, passCount, total, detail
 
+    PasteRA wsP, "BNP"
+    PutText wsP.Range("L10"), "No"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), "") & ExpectNote(report, "Is Callable 是 No") & _
+                               ExpectNoNote(report, "找不到 Non call")
+    Tally "RA（BNP）：Is Callable 是 No → E2 留空並提醒", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN"
+    wsP.Range("G11").ClearContents
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), "") & ExpectNote(report, "找不到 Non call period") & _
+                               ExpectNoNote(report, "Guaranteed")
+    Tally "RA：沒有 Call Feature → E2 留空，提醒找不到 Non call period", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN"
+    PutText wsP.Range("E11"), "EUR CMS 10Y " & ChrW(&H2266) & " 3.0%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("F2"), "") & ExpectNote(report, "標的認不得")
+    Tally "RA：EUR CMS 10Y 不是格式裡的標的 → F2 留空並提醒", fails, passCount, total, detail
+
+    PasteMSRangeAccrual wsP
+    wsP.Range("E5").Value = "Range Accrual"
+    SetTermCell wsT.Range("V2"), 5
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "這封信的商品是 DACN") & CompareCell(wsT.Range("V2"), 5)
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "選了保本型商品、MS 有 Strike（判定 DACN）→ 不填入", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A10"), "XYZ NOTE"
+    wsP.Range("E5").Value = "Range Accrual"
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "Product（XYZ NOTE）認不得")
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "選了保本型商品、Product 認不得 → 不填入", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    wsP.Range("E5").Value = "Range Accrual"
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "信裡沒有 Range Accrual 的欄位")
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "選了保本型商品、信沒有 Product 也沒有 RA 欄位（SG FCN）→ 不填入", fails, passCount, total, detail
+
     PasteBase wsP
     wsP.Range("E5").Value = "Range Accrual"
     SetTermCell wsT.Range("V2"), 5
