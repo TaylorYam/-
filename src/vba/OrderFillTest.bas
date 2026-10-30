@@ -624,10 +624,11 @@ Public Function Test_OrderFill_RulesReport() As String
     Tally "RA：沒有 Call Feature → E2 留空，提醒找不到 Non call period", fails, passCount, total, detail
 
     PasteRA wsP, "ESUN"
+    ' 發行日故意和 Trade date + 7 天不同，才驗得出是讀信裡的值、不是推算
     PutText wsP.Range("A7"), "Trade date: 2026/8/7"
-    PutText wsP.Range("A8"), "Issue date (T+7): 2026/8/14"
+    PutText wsP.Range("K7"), "Issue date (T+7): 2026/8/13"
     fails = RunFill(report)
-    If fails = "" Then fails = CompareCell(wsT.Range("O6"), "2026/08/14") & ExpectNoNote(report, "Issue date")
+    If fails = "" Then fails = CompareCell(wsT.Range("O6"), "2026/08/13") & ExpectNoNote(report, "Issue date")
     Tally "玉山格式 Issue date (T+7) → O6", fails, passCount, total, detail
 
     PasteRA wsP, "ESUN"
