@@ -539,7 +539,7 @@ Public Function Test_OrderFill_RulesReport() As String
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual") & CompareCell(wsT.Range("C2"), "CA") & _
                                CompareCell(wsT.Range("D2"), "USD") & CompareCell(wsT.Range("E2"), 12) & _
-                               CompareCell(wsT.Range("F2"), "USD SOFR CMS 10Y") & CompareCell(wsT.Range("G2"), "") & _
+                               CompareCell(wsT.Range("F2"), "USOSFR10") & CompareCell(wsT.Range("G2"), "") & _
                                CompareCell(wsT.Range("K2"), "") & CompareCell(wsT.Range("L2"), "") & _
                                CompareCell(wsT.Range("M2"), "") & CompareCell(wsT.Range("N2"), "") & _
                                CompareCell(wsT.Range("O2"), 95.5) & CompareCell(wsT.Range("P2"), 10) & _
@@ -549,12 +549,12 @@ Public Function Test_OrderFill_RulesReport() As String
     fails = fails & ExpectNoNote(report, "找不到 Strike") & ExpectNoNote(report, "找不到 KO") & _
                     ExpectNoNote(report, "Coupon") & ExpectNoNote(report, "找不到 Barrier Type") & _
                     ExpectNoNote(report, "找不到 期初價格") & ExpectNoNote(report, "不只一列")
-    Tally "RA（玉山格式，表頭說明列、配息兩列）：E2 = NC、F2 = CMS 10Y、O2 = 100 - UF、P2 年、Q2 Y、V2 0，其他欄留空", _
+    Tally "RA（玉山格式，表頭說明列、配息兩列）：E2 = NC、F2 = USOSFR10、O2 = 100 - UF、P2 年、Q2 Y、V2 0，其他欄留空", _
           fails, passCount, total, detail
 
     PasteRA wsP, "ESUN1"
     fails = RunFill(report)
-    If fails = "" Then fails = CompareCell(wsT.Range("E2"), 12) & CompareCell(wsT.Range("F2"), "USD SOFR CMS 10Y") & _
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), 12) & CompareCell(wsT.Range("F2"), "USOSFR10") & _
                                CompareCell(wsT.Range("O2"), 95.5) & CompareCell(wsT.Range("V2"), 0)
     Tally "RA（玉山格式，Coupon 說明和表頭同一格）", fails, passCount, total, detail
 
@@ -582,11 +582,11 @@ Public Function Test_OrderFill_RulesReport() As String
     PasteRA wsP, "BNP"
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual") & CompareCell(wsT.Range("C2"), "BNP") & _
-                               CompareCell(wsT.Range("E2"), 12) & CompareCell(wsT.Range("F2"), "USD CMT 10Y") & _
+                               CompareCell(wsT.Range("E2"), 12) & CompareCell(wsT.Range("F2"), "USGG10YR") & _
                                CompareCell(wsT.Range("O2"), 96) & CompareCell(wsT.Range("P2"), 15) & _
                                CompareCell(wsT.Range("Q2"), "Y") & CompareCell(wsT.Range("V2"), 0) & _
                                CompareCell(wsT.Range("O6"), "2026/10/20") & CompareCell(wsT.Range("O8"), "2041/10/21")
-    Tally "RA（BNP）：TW DRA、Non call period (Y)、UCMT10 → USD CMT 10Y", fails, passCount, total, detail
+    Tally "RA（BNP）：TW DRA、Non call period (Y)、UCMT10 → USGG10YR", fails, passCount, total, detail
 
     PasteRA wsP, "BNP", False
     ok = OrderFill_Run(True, report)
@@ -597,10 +597,10 @@ Public Function Test_OrderFill_RulesReport() As String
     PasteRA wsP, "BARC"
     fails = RunFill(report)
     If fails = "" Then fails = CompareCell(wsT.Range("C2"), "BARC") & CompareCell(wsT.Range("E2"), 12) & _
-                               CompareCell(wsT.Range("F2"), "USD SOFR CMS 10Y") & CompareCell(wsT.Range("O2"), 96) & _
+                               CompareCell(wsT.Range("F2"), "USOSFR10") & CompareCell(wsT.Range("O2"), 96) & _
                                CompareCell(wsT.Range("P2"), 5) & CompareCell(wsT.Range("Q2"), "Y")
     fails = fails & ExpectNoNote(report, "Tenor")
-    Tally "RA（BARC，RA Rate 判斷上手，有 Reoffer 也不是 CA）：Tenor 5Y → P2 5、NC 1Y → E2 12、CMS10Y", _
+    Tally "RA（BARC，RA Rate 判斷上手，有 Reoffer 也不是 CA）：Tenor 5Y → P2 5、NC 1Y → E2 12、CMS10Y → USOSFR10", _
           fails, passCount, total, detail
 
     PasteRA wsP, "BARC", False

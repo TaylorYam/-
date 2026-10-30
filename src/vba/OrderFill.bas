@@ -1529,8 +1529,8 @@ Private Function RATenor() As Variant
     End If
 End Function
 
-' 標的只有格式裡的兩種：連 CMS → USD SOFR CMS 10Y（USS10Y、CMS10Y、USD SOFR CMS 10Y ≦ 5.0%）；
-' 連 CMT → USD CMT 10Y（UCMT10、USD CMT 10Y）。其他（例：股權連結的 TSM UN ≧ 75%、EUR CMS 10Y）留空並提醒
+' 標的只有格式裡的兩種，填 BBG 代號（Underlying 工作表 G 欄）：連 CMS → USOSFR10（USS10Y、CMS10Y、USD SOFR CMS 10Y ≦ 5.0%）；
+' 連 CMT → USGG10YR（UCMT10、USD CMT 10Y）。其他（例：股權連結的 TSM UN ≧ 75%、EUR CMS 10Y）留空並提醒
 Private Function RAUnderlying(ByVal v As Variant) As String
     Dim s As String, rateCount As Long
 
@@ -1538,11 +1538,11 @@ Private Function RAUnderlying(ByVal v As Variant) As String
     s = CompactUpper(v)
     rateCount = (Len(s) - Len(Replace(Replace(s, "CMS", ""), "CMT", ""))) \ 3
     If s = "USS10Y" Or (rateCount = 1 And IsUSDRate(s, "CMS10Y")) Then
-        RAUnderlying = "USD SOFR CMS 10Y"
+        RAUnderlying = "USOSFR10"
     ElseIf s = "UCMT10" Or (rateCount = 1 And IsUSDRate(s, "CMT10Y")) Then
-        RAUnderlying = "USD CMT 10Y"
+        RAUnderlying = "USGG10YR"
     Else
-        FlagField "UL1", "標的認不得：" & ShowVal(v) & "，F2 留空（Range Accrual 只有 USD SOFR CMS 10Y、USD CMT 10Y）"
+        FlagField "UL1", "標的認不得：" & ShowVal(v) & "，F2 留空（Range Accrual 只有 USD SOFR CMS 10Y → USOSFR10、USD CMT 10Y → USGG10YR）"
     End If
 End Function
 
