@@ -135,12 +135,12 @@ def ra_noncall(t):
 
 
 def ra_underlying(t):
-    """只有 USD SOFR CMS 10Y、USD CMT 10Y；rate 前面只能有 USD、SOFR 或條件符號（EUR CMS 10Y 不算）"""
+    """只有 USD SOFR CMS 10Y → USOSFR10、USD CMT 10Y → USGG10YR（BBG 代號）；rate 前面只能有 USD、SOFR 或條件符號（EUR CMS 10Y 不算）"""
     v = re.sub(r'\s+', '', pick(t, 'underlying', 'index', 'condition1')).upper()
     n = len(re.findall(r'CMS|CMT', v))
     def usd(rate): return n == 1 and re.search(r'(?:^|[^A-Z])(?:USD)?(?:SOFR)?' + rate, v) is not None
-    if v == 'USS10Y' or usd('CMS10Y'): return 'USD SOFR CMS 10Y'
-    if v == 'UCMT10' or usd('CMT10Y'): return 'USD CMT 10Y'
+    if v == 'USS10Y' or usd('CMS10Y'): return 'USOSFR10'
+    if v == 'UCMT10' or usd('CMT10Y'): return 'USGG10YR'
     return ''
 
 
