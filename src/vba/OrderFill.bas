@@ -84,10 +84,10 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Dim guar As Variant, strike As Variant, koBarrier As Variant
     Dim coupon As Variant, notePrice As Variant, upfront As Variant
     Dim tenor As Variant, periods As Variant
-    Dim ki As Variant, pgRate As Variant, accrualBarrier As Variant, expressMult As Variant
+    Dim ki As Variant, pgRate As Variant, accrualBarrier As Variant, expressMult As Variant, benKO As Variant
     Dim koType As String, barrierType As String, initPrice As String, fixedCpn As String
     Dim guarField As String, strikeField As String, koField As String, couponField As String
-    Dim isSuperBull As Boolean
+    Dim isSuperBull As Boolean, isBEN As Boolean
     Dim ul(1 To 5) As String
     Dim tradeDate As Date, issueDate As Date, finalDate As Date, maturityDate As Date
     Dim hasTrade As Boolean, hasIssue As Boolean, hasFinal As Boolean, hasMaturity As Boolean
@@ -173,7 +173,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     isSuperBull = (product = "Super Bull")
     If isSuperBull Then
         guarField = "ACFREQ"
-        couponField = "ACCOUPON"
+        couponField = "FLATCPN"
         If issuer = "HSBC" Or issuer = "CA" Then
             koField = "ACBARRIER"
         Else
@@ -182,15 +182,29 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         End If
     End If
 
-    guar = NumField(guarField, 0)
-    ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月（0 → 1）
-    If issuer = "Citi" And Not isSuperBull And Not IsEmpty(guar) Then guar = guar + 1
+    ' BEN 的 N 是 Bonus Coupon（flat）；M 是 Coupon Barrier，信裡沒有（HSBC、CA、JPM、Natixis）時 = Strike
+    isBEN = (product = "Regular BEN" Or product = "Digital BEN")
+    If isBEN Then
+        couponField = "FLATCPN"
+        If mSrc.Exists("CPNBARRIER") Or IsFlagged("CPNBARRIER") Then koField = "CPNBARRIER" Else koField = strikeField
+    End If
+
+    If Not isBEN Then   ' BEN 的 E2 = Tenor，在下面另外算
+        guar = NumField(guarField, 0)
+        ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月（0 → 1）
+        If issuer = "Citi" And Not isSuperBull And Not IsEmpty(guar) Then guar = guar + 1
+    End If
 
     strike = NumField(strikeField, 3)
     If koField = strikeField Then
         koBarrier = strike
     Else
         koBarrier = NumField(koField, 3)
+    End If
+    If isBEN And koField = "CPNBARRIER" And Not IsEmpty(koBarrier) And Not IsEmpty(strike) Then
+        If koBarrier <> strike Then
+            AddNote "Coupon Barrier（" & koBarrier & "）和 Strike（" & strike & "）不同，M2 填 Coupon Barrier，請確認"
+        End If
     End If
     coupon = NumField(couponField, 1)
     ki = NumField("KI", 3)
@@ -254,6 +268,17 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         End If
     End If
 
+    ' BEN 依 Term!A14：Guaranteed Period = Tenor；KO Barrier 有值（BEN with KO，樣本沒有）時不猜，E2 留空
+    If isBEN Then
+        benKO = NumField("KOBARRIER", 3)
+        If Not IsEmpty(benKO) Or IsFlagged("KOBARRIER") Then
+            guar = Empty
+            AddNote "信裡有 KO Barrier（" & ShowBlank(GetVal("KOBARRIER")) & "），可能是 BEN with KO，E2 留空，請依 TS 填入"
+        Else
+            guar = tenor
+        End If
+    End If
+
     notePrice = NumField("PRICE", 3)
     If IsEmpty(notePrice) And Not IsFlagged("PRICE") Then
         ' Citi 只給 Upfront（UF），Note Price = 100 - Upfront
@@ -261,8 +286,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         If Not IsEmpty(upfront) Then notePrice = Round(100 - upfront, 4)
     End If
 
-    ' Super Bull 的 KO Type 固定 Period End
-    If isSuperBull Then
+    ' Super Bull、BEN 的 KO Type 固定 Period End
+    If isSuperBull Or isBEN Then
         koType = "Period End"
     Else
         koType = NormKOType(GetVal("KOTYPE"), GetVal("KOMEMORY"), GetVal("MEMAUTOCALL"), GetVal("DAILYKO"))
@@ -298,7 +323,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     '--- 提醒：找不到的欄位（已提醒過格式或不一致的不重複）---
     If tdcc = "" Then WarnMissing "TDCC"
     If ccy = "" Then WarnMissing "CURRENCY"
-    If IsEmpty(guar) Then WarnMissing guarField
+    If IsEmpty(guar) And Not isBEN Then WarnMissing guarField   ' BEN 的 E2 來自 Tenor，已另外提醒
     If ul(1) = "" Then WarnMissing "UL1"
     If IsEmpty(strike) Then WarnMissing strikeField
     If koType = "" Then WarnMissing "KOTYPE"
@@ -344,8 +369,8 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     wsT.Range("R2").Value = barrierType
     wsT.Range("S2").Value = ki
     wsT.Range("T2").Value = pgRate
-    ' Floor Coupon：FCN、DACN、FCN_Express、Super Bull 固定 0，其他產品留空
-    If product = "FCN" Or product = "DACN" Or product = "FCN_Express" Or isSuperBull Then wsT.Range("V2").Value = 0
+    ' Floor Coupon：FCN、DACN、FCN_Express、Super Bull、BEN 固定 0，其他產品留空
+    If product = "FCN" Or product = "DACN" Or product = "FCN_Express" Or isSuperBull Or isBEN Then wsT.Range("V2").Value = 0
 
     wsT.Range("O5").Value = Format$(tradeDate, "yyyy/mm/dd")
     wsT.Range("O9").Value = initPrice
@@ -544,6 +569,15 @@ Private Sub CollectFields(ByRef data As Variant)
                     key = CellKey(data(r, c))
                     If mHeaderMap.Exists(key) Then RecordField mHeaderMap(key), data(valueRow, c), PRI_TABLE
                 Next c
+                ' 後面幾列也是數值（一張表多筆單）：只讀第一列，但這些列也不做左右一組
+                r2 = valueRow + 1
+                Do While IsExtraValueRow(data, r, r2)
+                    isValueRow(r2) = True
+                    r2 = r2 + 1
+                Loop
+                If r2 > valueRow + 1 Then
+                    AddNote "表格有不只一列數值（一封信多筆單），只讀第一列，請確認是要填的那一筆"
+                End If
             End If
         End If
     Next r
@@ -612,7 +646,7 @@ Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As 
             End If
             key = "D" & CStr(CLng(d))
         Case "GUAR", "STRIKE", "KOBARRIER", "COUPON", "PRICE", "UPFRONT", "TENOR", "PERIODS", "KI", "PGRATE", _
-             "ACCRUALBARRIER", "EXPRESSMULT", "SBLEVEL", "ACBARRIER", "ACFREQ", "ACCOUPON"
+             "ACCRUALBARRIER", "EXPRESSMULT", "SBLEVEL", "ACBARRIER", "ACFREQ", "FLATCPN", "CPNBARRIER"
             If Not ParseNumber(v, n, pct) Then
                 FlagField field, FieldLabel(field) & " 格式不認得：" & ShowVal(raw) & "，" & MissingAction(field)
                 Exit Sub
@@ -637,6 +671,20 @@ Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As 
     mSrc(field) = ShowVal(raw) & "（" & PriLabel(pri) & "）"
 End Sub
 
+' 第 r 列在 3 個以上的表頭下有值（例：MS 一張表三筆單）；第 r 列本身是表頭（下一張表）時不算
+Private Function IsExtraValueRow(ByRef data As Variant, ByVal headerRow As Long, ByVal r As Long) As Boolean
+    Dim c As Long, filled As Long, headers As Long
+
+    If r > UBound(data, 1) Then Exit Function
+    For c = 1 To UBound(data, 2)
+        If mHeaderMap.Exists(CellKey(data(r, c))) Then headers = headers + 1
+        If mHeaderMap.Exists(CellKey(data(headerRow, c))) Then
+            If Not IsBlankVal(data(r, c)) Then filled = filled + 1
+        End If
+    Next c
+    IsExtraValueRow = (filled >= 3 And headers < 3)
+End Function
+
 Private Function GetVal(ByVal field As String) As Variant
     If mVal.Exists(field) Then GetVal = mVal(field) Else GetVal = ""
 End Function
@@ -651,7 +699,7 @@ Private Function NumField(ByVal field As String, ByVal decimalLimit As Double) A
     If Not ParseNumber(mVal(field), n, pct) Then Exit Function
 
     If decimalLimit > 0 And Not pct And n > 0 Then
-        If field = "COUPON" Or field = "ACCOUPON" Then
+        If field = "COUPON" Or field = "FLATCPN" Then
             looksDecimal = (n < decimalLimit)
         Else
             looksDecimal = (n <= decimalLimit)
@@ -735,7 +783,8 @@ Private Function FieldLabel(ByVal field As String) As String
         Case "SBLEVEL": FieldLabel = "Super Bull Level"
         Case "ACBARRIER": FieldLabel = "Autocall Barrier"
         Case "ACFREQ": FieldLabel = "Autocall Frequency／Autocall Freq／Autocall Date(one-time)"
-        Case "ACCOUPON": FieldLabel = "Autocall Coupon Flat／Bonus Coupon／Autocall Flat Coupon"
+        Case "FLATCPN": FieldLabel = "Autocall Coupon Flat／Autocall Flat Coupon／Bonus Coupon／Coupon Flat"
+        Case "CPNBARRIER": FieldLabel = "Coupon Barrier"
         Case Else: FieldLabel = field
     End Select
 End Function
@@ -772,7 +821,7 @@ Private Sub BuildHeaderMap()
     Set mHeaderMap = CreateObject("Scripting.Dictionary")
 
     AddSyn "PRODUCT", "product"
-    AddSyn "CURRENCY", "currency", "curr"
+    AddSyn "CURRENCY", "currency", "curr", "ccy"
     AddSyn "GUAR", "guaranteedperiodsm", "guaranteedperiods", "noncallperiodsm", _
                    "noncallableperiods", "noncallm"
     For i = 1 To 6
@@ -782,9 +831,9 @@ Private Sub BuildHeaderMap()
     AddSyn "KOTYPE", "kotype"
     AddSyn "KOBARRIER", "kobarrier", "ko", "autocall"
     AddSyn "COUPON", "couponpa", "coupon"
-    AddSyn "PRICE", "upfrontnoteprice", "noteprice", "cost", "reoffer", "offerprice"
+    AddSyn "PRICE", "upfrontnoteprice", "noteprice", "cost", "reoffer", "offerprice", "issueprice"
     AddSyn "UPFRONT", "upfront"                  ' Citi 的 Upfront (%) 是 UF，不是票面價格
-    AddSyn "TENOR", "tenorm", "tenor"
+    AddSyn "TENOR", "tenorm", "tenor", "tenormonths"
     AddSyn "PERIODS", "noofperiods"              ' SG
     AddSyn "SETTLEFREQ", "settlementfrequency"   ' SG
     AddSyn "FIXEDCPN", "fixedcoupons"            ' SG，用來推定 Product
@@ -806,7 +855,9 @@ Private Sub BuildHeaderMap()
     AddSyn "SBLEVEL", "superbulllevel"           ' BNP
     AddSyn "ACBARRIER", "autocallbarrier"        ' HSBC、CA
     AddSyn "ACFREQ", "autocallfrequencym", "autocallfreqm", "autocalldateonetime"
-    AddSyn "ACCOUPON", "autocallcouponflat", "bonuscouponflat", "autocallflatcoupon"
+    ' Super Bull 的 Autocall Coupon、BEN 的 Bonus Coupon 都是 flat 配息，只在 Product 是 Super Bull 或 BEN 時才讀
+    AddSyn "FLATCPN", "autocallcouponflat", "bonuscouponflat", "autocallflatcoupon", "bonuscoupon", "couponflat"
+    AddSyn "CPNBARRIER", "couponbarrier"         ' BEN 專用
 End Sub
 
 Private Sub AddSyn(ByVal field As String, ParamArray keys() As Variant)
@@ -903,13 +954,14 @@ Private Function IssuerFromSignature(ByRef data As Variant) As String
         IssuerFromSignature = "SG"
     ElseIf keys.Exists("issuerprodref") Or keys.Exists("issuedatelag") Then
         IssuerFromSignature = "DBS"
-    ElseIf keys.Exists("clientref") Or keys.Exists("redemptionvaluationdate") Or InStr(allText, "ESS_TW_") > 0 Then
+    ElseIf keys.Exists("clientref") Or keys.Exists("redemptionvaluationdate") Or InStr(allText, "ESS_TW_") > 0 _
+           Or keys.Exists("strategycode") Then   ' Strategy Code：BNP 的 BEN
         IssuerFromSignature = "BNP"
     ElseIf keys.Exists("systemremarks") Then
         IssuerFromSignature = "JPM"
     ElseIf keys.Exists("message") Then
         IssuerFromSignature = "Natixis"
-    ElseIf keys.Exists("comments") And keys.Exists("id") Then
+    ElseIf (keys.Exists("comments") Or keys.Exists("commentremarks")) And keys.Exists("id") Then   ' Comment/Remarks：HSBC 的 BEN
         IssuerFromSignature = "HSBC"
     ElseIf keys.Exists("quoteid") And keys.Exists("notional") Then
         IssuerFromSignature = "BARC"
@@ -1064,7 +1116,8 @@ End Function
 
 ' Product 對應到 Variable!D 的寫法；上手各自的寫法先轉換：
 '   Citi 的 FCA → FCN；DAC（多數上手）、DRA（DBS）、VMRAN（UBS）→ DACN；Express FCN → FCN_Express；
-'   SuperBull（BNP、HSBC）→ Super Bull
+'   SuperBull（BNP、HSBC）→ Super Bull；BEN、BEN WITH LOOKBACK（MS）→ Regular BEN；
+'   Digital Note（CA）、DCN（SG）、DIGIT、DIGIT WITH LOOKBACK（MS）、Bonus RCN（HSBC）→ Digital BEN
 ' 轉換後不在 Variable!D 的留空並提醒
 Private Function NormProduct(ByVal v As Variant) As String
     Dim s As String
@@ -1078,6 +1131,8 @@ Private Function NormProduct(ByVal v As Variant) As String
         Case "DAC", "DRA", "VMRAN": s = "DACN"
         Case "EXPRESS FCN": s = "FCN_Express"
         Case "SUPERBULL": s = "Super Bull"
+        Case "BEN", "BEN WITH LOOKBACK": s = "Regular BEN"
+        Case "DIGITAL NOTE", "DCN", "DIGIT", "DIGIT WITH LOOKBACK", "BONUS RCN": s = "Digital BEN"
     End Select
 
     Set wsV = ThisWorkbook.Worksheets("Variable")
