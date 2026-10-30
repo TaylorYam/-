@@ -623,6 +623,27 @@ Public Function Test_OrderFill_RulesReport() As String
                                ExpectNoNote(report, "Guaranteed")
     Tally "RA：沒有 Call Feature → E2 留空，提醒找不到 Non call period", fails, passCount, total, detail
 
+    PasteRA wsP, "BNP"
+    wsP.Range("M10").Value = 0.1
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), "") & ExpectNote(report, "不是整月數")
+    Tally "RA（BNP）：Non call period 0.1 年 → 1.2 個月不是整月數，E2 留空並提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("J10").Value = 60
+    PutText wsP.Range("A12"), "Tenor: 5Y"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("P2"), "") & ExpectNote(report, "Tenor") & _
+                               ExpectNote(report, "不一致")
+    Tally "Tenor 60（月）和 5Y 並存 → 算不一致，P2 留空", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("I9").Value = "UF"
+    PutText wsP.Range("I10"), "1.5%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O2"), "") & ExpectNote(report, "找不到")
+    Tally "FCN 只有 UF → 不用 100 - UF（UF 只給 Range Accrual），O2 留空並提醒", fails, passCount, total, detail
+
     PasteRA wsP, "ESUN"
     PutText wsP.Range("E11"), "EUR CMS 10Y " & ChrW(&H2266) & " 3.0%"
     fails = RunFill(report)
