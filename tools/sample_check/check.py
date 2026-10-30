@@ -18,7 +18,10 @@
 import sys, json, re, collections, datetime
 
 
-def norm(s): return re.sub(r'[^a-z0-9?]', '', (s or '').lower())
+def norm(s):
+    """轉小寫，只留英數與「?」；玉山格式的 Issue date (T+7)：T+ 後面 1～2 位數的天數不影響表頭（和 OrderFill.bas 的 NormKey 一致）"""
+    k = re.sub(r'[^a-z0-9?]', '', (s or '').lower())
+    return 'issuedate' if re.fullmatch(r'issuedatet\d{1,2}', k) else k
 
 
 def last_value(s):

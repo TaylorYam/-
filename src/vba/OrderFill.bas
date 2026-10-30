@@ -1023,7 +1023,9 @@ Private Sub AddSyn(ByVal field As String, ParamArray keys() As Variant)
     Next k
 End Sub
 
-' 正規化：轉小寫，只留英數與「?」（用來分辨 MS 的 "Put KI?" 與 "Put KI (%)"）
+' 正規化：轉小寫，只留英數與「?」（用來分辨 MS 的 "Put KI?" 與 "Put KI (%)"）。
+' 玉山格式的 Issue date (T+7)：T+ 後面 1～2 位數的天數不影響表頭，一律當成 issuedate。
+' 天數不固定，AddSyn 只能列舉，所以放在這裡（每個表頭都會經過）；tools/sample_check/check.py 的 norm() 要一起改
 Private Function NormKey(ByVal s As String) As String
     Dim i As Long, ch As String, out As String
     s = LCase$(s)
@@ -1031,6 +1033,7 @@ Private Function NormKey(ByVal s As String) As String
         ch = Mid$(s, i, 1)
         If (ch >= "a" And ch <= "z") Or (ch >= "0" And ch <= "9") Or ch = "?" Then out = out & ch
     Next i
+    If out Like "issuedatet#" Or out Like "issuedatet##" Then out = "issuedate"
     NormKey = out
 End Function
 
