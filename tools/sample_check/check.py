@@ -1,6 +1,8 @@
 """比對 run_fill.ps1 的回填結果和信件表格直接算出的應填值，逐欄列出差異。
 
-用法：python -I -X utf8 check.py <manifest.json> <result.txt>
+用法：python -I -X utf8 check.py <manifest.json> <result.txt> [保本型商品]
+
+保本型商品（例：Range Accrual）的樣本，run_fill.ps1 用 -ProtectedProduct 在 E5 選商品，這裡也要給同一個商品名稱。
 
 應填值由這支程式自己讀表格計算（不呼叫 VBA），規則照 docs/order-fill.md。結果分成：
 - 一致：包含用到推算的信。信裡沒有日期、工具有提醒時（O5 填今天、O6～O8 由 Term 推算），
@@ -27,7 +29,7 @@ def last_value(s):
 
 
 def num(s):
-    s = last_value(s).replace('%', '').replace('\xa0', '').strip()
+    s = re.sub(r'\s+', '', last_value(s).replace('%', ''))   # 數字中間的空白不算（例：HSBC 的 82 .00%）
     s = re.sub(r'(?i)m$', '', s).strip()
     if not re.fullmatch(r'-?\d+(\.\d+)?', s): return None
     v = float(s)
@@ -54,7 +56,8 @@ def date(s):
 
 
 HEADER_WORDS = ('product', 'currency', 'curr', 'strike', 'putstrike', 'kotype', 'tenorm', 'bbgcode1',
-                'underlying1', 'stock1', 'strikedate', 'couponpa')
+                'underlying1', 'stock1', 'strikedate', 'couponpa',
+                'tenory', 'condition1', 'callfeature', 'rarate', 'lowerbarrier', 'upperbarrier')   # Range Accrual
 
 
 def table_of(rows):
@@ -104,9 +107,53 @@ def pick(d, *keys):
 # 信裡的 Product 寫法 → Variable!D 的商品名稱（對照 OrderFill.bas 的 NormProduct）
 PRODUCTS = {'fcn': 'FCN', 'fca': 'FCN', 'dac': 'DACN', 'dra': 'DACN', 'vmran': 'DACN', 'dacn': 'DACN',
             'express fcn': 'FCN_Express', 'superbull': 'Super Bull', 'super bull': 'Super Bull',
-            'range accrual': 'Range Accrual'}
+            'range accrual': 'Range Accrual', 'ben': 'Regular BEN', 'regular ben': 'Regular BEN',
+            'ben with lookback': 'Regular BEN', 'digital note': 'Digital BEN', 'dcn': 'Digital BEN',
+            'digit': 'Digital BEN', 'digit with lookback': 'Digital BEN', 'bonus rcn': 'Digital BEN',
+            'tw dra': 'Range Accrual', 'rates cran': 'Range Accrual', 'rates autocall ran': 'Range Accrual'}
 # V2（Floor Coupon）填 0 的商品
-FLOOR_ZERO = ('FCN', 'DACN', 'FCN_Express', 'Super Bull')
+FLOOR_ZERO = ('FCN', 'DACN', 'FCN_Express', 'Super Bull', 'Regular BEN', 'Digital BEN')
+BEN = ('Regular BEN', 'Digital BEN')
+RA_COUPON = 'couponcouponfrequencycallablefrequency'   # 玉山詢價格式的配息欄
+
+
+def ra_noncall(t):
+    """Range Accrual 的 Non-call（月）：Non call period (Y) × 12；NC 1Y*3M、NC 0.25Y X 3M、1Y 取 NC 後面的期間。
+    Is Callable 是 No、或不是整月數時工具留空"""
+    if pick(t, 'iscallable').lower() == 'no': return None
+    y = num(pick(t, 'noncallperiody'))
+    if y is not None: m = y * 12
+    else:
+        v = re.sub(r'\s+', '', pick(t, 'callfeature', 'autocallfeature', 'nc')).upper()
+        g = re.match(r'(?:NC)?(\d+(?:\.\d+)?)([YM])', v)
+        if not g: return None
+        m = float(g[1]) * (12 if g[2] == 'Y' else 1)
+    return int(m) if m == int(m) else None
+
+
+def ra_underlying(t):
+    """只有 USD SOFR CMS 10Y、USD CMT 10Y；rate 前面只能有 USD、SOFR 或條件符號（EUR CMS 10Y 不算）"""
+    v = re.sub(r'\s+', '', pick(t, 'underlying', 'index', 'condition1')).upper()
+    n = len(re.findall(r'CMS|CMT', v))
+    def usd(rate): return n == 1 and re.search(r'(?:^|[^A-Z])(?:USD)?(?:SOFR)?' + rate, v) is not None
+    if v == 'USS10Y' or usd('CMS10Y'): return 'USD SOFR CMS 10Y'
+    if v == 'UCMT10' or usd('CMT10Y'): return 'USD CMT 10Y'
+    return ''
+
+
+def ra_tenor(t):
+    y = num(pick(t, 'tenory'))
+    if y is not None: return y
+    g = re.fullmatch(r'(\d+(?:\.\d+)?)Y', re.sub(r'\s+', '', pick(t, 'tenorm', 'tenor', 'tenormonths')).upper())
+    return num(g[1]) if g else None
+
+
+def ra_floor(t):
+    """Floor@ 的值；沒有 Floor 填 0，Floor 後面讀不到數字時工具留空"""
+    c = t.get(RA_COUPON, '')
+    if not re.search(r'(?i)floor', c): return 0
+    g = re.search(r'(?i)floor\s*@?\s*(\d+(?:\.\d+)?)', c)
+    return num(g[1]) if g else None
 
 
 def ko_type(t, issuer):
@@ -132,7 +179,7 @@ def barrier(t):
     return '?' + v
 
 
-def expected(rec, t, inl):
+def expected(rec, t, inl, protected=None):
     issuer = rec['issuer']
     prod_raw = pick(t, 'product')
     prod = PRODUCTS.get(re.sub(r'\s+', ' ', prod_raw.lower()), prod_raw)
@@ -140,22 +187,36 @@ def expected(rec, t, inl):
     if not prod_raw and issuer == 'SG':
         prod = {'first period': 'DACN', 'first two periods': 'DACN', 'all periods': 'FCN'}.get(
             re.sub(r'\s+', ' ', pick(t, 'fixedcoupons').lower()), '')
+    if protected: prod = protected   # 信裡的 Product 是別的商品時工具不填入，會列為不一致
     both = {**inl, **t}
     tdcc = re.sub(r'\D', '', pick(both, 'tdcc', 'tdcccode'))
     e = {'A2': prod, 'B2': tdcc if len(tdcc) == 12 else '', 'C2': issuer,
-         'D2': pick(t, 'currency', 'curr').upper(), 'Q2': 'M', 'V2': 0 if prod in FLOOR_ZERO else None}
+         'D2': pick(t, 'currency', 'curr', 'ccy').upper(), 'Q2': 'M', 'V2': 0 if prod in FLOOR_ZERO else None}
     for k in range(1, 6):
         e['FGHIJ'[k - 1] + '2'] = pick(t, f'bbgcode{k}', f'underlying{k}', f'stock{k}').upper()
     pg = re.search(r'PG rate\s*:\s*([\d.]+)\s*%', rec['text'], re.I)
     e['T2'] = num(pg[1]) if pg else None
-    if prod == 'Super Bull':
+    if prod == 'Range Accrual':   # 只填 A～F、O～Q、T、V
+        e.update({c + '2': None for c in 'GHIJKLMNRS'})
+        e.update({'E2': ra_noncall(t), 'F2': ra_underlying(t), 'Q2': 'Y', 'V2': ra_floor(t)})
+    elif prod == 'Super Bull':
         hc = issuer in ('HSBC', 'CA')
         e['E2'] = num(pick(t, 'autocallfrequencym', 'autocallfreqm', 'autocalldateonetime'))
         e['K2'] = num(pick(t, 'strike') if hc else pick(t, 'superbulllevel'))
         e['L2'] = 'Period End'
         e['M2'] = num(pick(t, 'autocallbarrier') if hc else pick(t, 'superbulllevel'))
-        e['N2'] = num(pick(t, 'autocallcouponflat', 'bonuscouponflat', 'autocallflatcoupon'))
+        e['N2'] = num(pick(t, 'autocallcouponflat', 'bonuscouponflat', 'autocallflatcoupon', 'bonuscoupon',
+                           'couponflat'))
         e['R2'] = ''; e['S2'] = ''
+    elif prod in BEN:   # E2 = Tenor（下面算），KO Barrier 有值時留空；M2 沒有 Coupon Barrier 時 = Strike
+        e['K2'] = num(pick(t, 'strike', 'putstrike'))
+        e['L2'] = 'Period End'
+        cb = pick(t, 'couponbarrier')
+        e['M2'] = num(cb) if cb else e['K2']
+        e['N2'] = num(pick(t, 'bonuscouponflat', 'bonuscoupon', 'couponflat'))
+        bt = barrier(t)
+        e['R2'] = bt
+        e['S2'] = None if bt == 'NONE' else num(pick(t, 'kibarrier', 'putki', 'ki'))
     else:   # FCN、DACN、FCN_Express
         e['E2'] = 0 if prod == 'FCN_Express' else num(pick(t, 'guaranteedperiodsm', 'guaranteedperiods',
                                                            'noncallperiodsm', 'noncallm', 'noncallableperiods'))
@@ -166,10 +227,14 @@ def expected(rec, t, inl):
         bt = barrier(t)
         e['R2'] = bt
         e['S2'] = None if bt == 'NONE' else num(pick(t, 'kibarrier', 'putki', 'ki'))
-    e['O2'] = num(pick(t, 'upfrontnoteprice', 'noteprice', 'cost', 'reoffer', 'offerprice'))
-    tenor = num(pick(t, 'tenorm', 'tenor'))
+    e['O2'] = num(pick(t, 'upfrontnoteprice', 'noteprice', 'cost', 'reoffer', 'offerprice', 'issueprice'))
+    if e['O2'] is None and prod == 'Range Accrual':   # 玉山格式只有 UF
+        uf = num(pick(t, 'uf'))
+        e['O2'] = None if uf is None else round(100 - uf, 4)
+    tenor = num(pick(t, 'tenorm', 'tenor', 'tenormonths'))
     if tenor is None and pick(t, 'settlementfrequency').lower() == 'monthly': tenor = num(pick(t, 'noofperiods'))
-    e['P2'] = tenor
+    e['P2'] = ra_tenor(t) if prod == 'Range Accrual' else tenor
+    if prod in BEN: e['E2'] = None if pick(t, 'kobarrier', 'autocall', 'ko') else tenor
     e['O5'] = date(pick(both, 'tradedate', 'strikedate', 'initialvaluationdate'))
     e['O6'] = date(pick(both, 'issuedate', 'issuancedate', 'issuedatetcalendardays'))
     e['O7'] = date(pick(both, 'finalvaluationdate', 'finalfixingdate', 'redemptionvaluationdate', 'finalvaluation'))
@@ -177,6 +242,7 @@ def expected(rec, t, inl):
     ip = re.search(r'Initial price\s*:\s*(vwap|opening price|closing price|[A-Za-z]+)', rec['text'], re.I)
     e['O9'] = {'vwap': 'VWAP', 'opening price': '開盤價', 'closing price': '收盤價'}.get(
         re.sub(r'\s+', ' ', ip[1]).strip().lower() if ip else '', '')
+    if prod == 'Range Accrual': e['O9'] = ''
     return e
 
 
@@ -198,11 +264,15 @@ def parse_results(path):
     return res
 
 
-INFER = {'O5': '找不到 Trade date', 'O6': '找不到 Issue date', 'O7': '找不到 Final valuation date',
-         'O8': '找不到 Maturity date'}
+# 日期找不到或格式不認得（例：BARC 的 Issue Date 是 1w）時，工具填今天或由 Term 推算
+INFER = {'O5': 'Trade date', 'O6': 'Issue date', 'O7': 'Final valuation date', 'O8': 'Maturity date'}
 
 
-def main(manifest_path, result_path):
+def inferred(k, text):
+    return f'找不到 {INFER[k]}' in text or f'{INFER[k]} 格式不認得' in text
+
+
+def main(manifest_path, result_path, protected=None):
     manifest = json.load(open(manifest_path, encoding='utf-8'))
     results = parse_results(result_path)
     today = datetime.date.today()
@@ -216,11 +286,11 @@ def main(manifest_path, result_path):
         if not res or not res['cells']:
             stat['沒有填入'] += 1; print(f'[沒有填入] {tag}\n       {res["text"] if res else "沒有結果"}'); continue
         t, n_tables = table_of(rec['rows'])
-        e = expected(rec, t, {**reply_dates_of(rec['rows']), **inline_of(rec['text'])})
+        e = expected(rec, t, {**reply_dates_of(rec['rows']), **inline_of(rec['text'])}, protected)
         diffs = []
         for k, v in e.items():
             act = res['cells'].get(k, '')
-            if k in INFER and v is None and INFER[k] in res['text']:
+            if k in INFER and v is None and inferred(k, res['text']):
                 if k != 'O5' or act == today_s: infer[k] += 1; continue
             if not same(v, act): diffs.append(f'{k} 應為 [{v}] 實際 [{act}]')
         for nt in res['notes']: notes[re.sub(r'\d[\d./%,]*', '#', nt)] += 1
@@ -243,4 +313,4 @@ def main(manifest_path, result_path):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2])
+    main(*sys.argv[1:4])
