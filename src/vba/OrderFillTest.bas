@@ -648,6 +648,83 @@ Public Function Test_OrderFill_RulesReport() As String
     fails = fails & ExpectNoNote(report, "Autocall Barrier")
     Tally "不是 Super Bull 的 Autocall Barrier → 不讀，M2 照 KO Barrier", fails, passCount, total, detail
 
+    PasteBEN wsP, "MS"
+    SetTermCell wsT.Range("V2"), Empty
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Regular BEN") & CompareCell(wsT.Range("C2"), "MS") & _
+                               CompareCell(wsT.Range("D2"), "USD") & CompareCell(wsT.Range("E2"), 3) & _
+                               CompareCell(wsT.Range("F2"), "MU UW") & CompareCell(wsT.Range("K2"), 90) & _
+                               CompareCell(wsT.Range("L2"), "Period End") & CompareCell(wsT.Range("M2"), 90) & _
+                               CompareCell(wsT.Range("N2"), 20.5) & CompareCell(wsT.Range("O2"), 98) & _
+                               CompareCell(wsT.Range("P2"), 3) & CompareCell(wsT.Range("R2"), "NONE") & _
+                               CompareCell(wsT.Range("S2"), "") & CompareCell(wsT.Range("V2"), 0)
+    fails = fails & ExpectNoNote(report, "找不到 Guaranteed") & ExpectNoNote(report, "找不到 KO") & _
+                    ExpectNoNote(report, "找不到 Coupon") & ExpectNoNote(report, "Coupon Barrier")
+    Tally "BEN（MS）：E2 = Tenor、L2 Period End、M2 是 Coupon Barrier、N2 是 Bonus Coupon、V2 0", fails, passCount, total, detail
+
+    PasteBEN wsP, "HSBC"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Regular BEN") & CompareCell(wsT.Range("C2"), "HSBC") & _
+                               CompareCell(wsT.Range("D2"), "USD") & CompareCell(wsT.Range("E2"), 6) & _
+                               CompareCell(wsT.Range("K2"), 85) & CompareCell(wsT.Range("M2"), 85) & _
+                               CompareCell(wsT.Range("N2"), 13.5) & CompareCell(wsT.Range("O2"), 97.5) & _
+                               CompareCell(wsT.Range("P2"), 6)
+    Tally "BEN（HSBC，表頭判斷上手）：CCY、Coupon (Flat)、Issue Price；沒有 Coupon Barrier → M2 = Strike", _
+          fails, passCount, total, detail
+
+    PasteBEN wsP, "MS"
+    PutText wsP.Range("B10"), "DIGIT WITH LOOKBACK"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Digital BEN") & CompareCell(wsT.Range("V2"), 0)
+    Tally "BEN：MS 的 DIGIT WITH LOOKBACK → Digital BEN", fails, passCount, total, detail
+
+    ' SG 的 DCN 有 Tenor (Months)；HSBC 的 Bonus RCN 有 KO Barrier 欄（N/A）、Cost
+    PasteBEN wsP, "SG"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Digital BEN") & CompareCell(wsT.Range("P2"), 3) & _
+                               CompareCell(wsT.Range("E2"), 3) & CompareCell(wsT.Range("M2"), 88)
+    Tally "BEN（SG）：DCN → Digital BEN、Tenor (Months) → P2", fails, passCount, total, detail
+
+    PasteBEN wsP, "HSBC RCN"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Digital BEN") & CompareCell(wsT.Range("E2"), 4) & _
+                               CompareCell(wsT.Range("O2"), 97.6)
+    fails = fails & ExpectNoNote(report, "KO Barrier")
+    Tally "BEN（HSBC）：Bonus RCN → Digital BEN、KO Barrier N/A → E2 = Tenor、Cost → O2", fails, passCount, total, detail
+
+    PasteBEN wsP, "HSBC RCN"
+    PutText wsP.Range("G10"), "105%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), "") & CompareCell(wsT.Range("L2"), "Period End") & _
+                               ExpectNote(report, "可能是 BEN with KO，E2 留空")
+    Tally "BEN：KO Barrier 有值 → E2 留空並提醒（BEN with KO）", fails, passCount, total, detail
+
+    PasteBEN wsP, "MS"
+    PutText wsP.Range("G10"), "95.00%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), 90) & CompareCell(wsT.Range("M2"), 95) & _
+                               ExpectNote(report, "Coupon Barrier（95）和 Strike（90）不同")
+    Tally "BEN：Coupon Barrier 和 Strike 不同 → M2 填 Coupon Barrier 並提醒", fails, passCount, total, detail
+
+    PasteBEN wsP, "BNP"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Regular BEN") & CompareCell(wsT.Range("C2"), "BNP") & _
+                               CompareCell(wsT.Range("M2"), 100) & CompareCell(wsT.Range("N2"), 50)
+    Tally "BEN（BNP，Strategy Code 判斷上手）", fails, passCount, total, detail
+
+    ' MS 一張表多筆單：只讀第一列並提醒
+    PasteBEN wsP, "MS"
+    wsP.Range("A10:L10").Copy wsP.Range("A11")
+    PutText wsP.Range("C11"), "LITE UW"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("F2"), "MU UW") & ExpectNote(report, "表格有不只一列數值")
+    Tally "一張表有多列數值 → 讀第一列並提醒", fails, passCount, total, detail
+
+    PasteBEN wsP, "MS"
+    fails = RunFill(report)
+    If fails = "" Then fails = ExpectNoNote(report, "表格有不只一列數值")
+    Tally "只有一列數值 → 不提醒多筆單", fails, passCount, total, detail
+
     PasteBase wsP
     wsP.Range("Q9").Value = "BBG Code 6"
     PutText wsP.Range("Q10"), "AAPL UW"
@@ -760,6 +837,45 @@ Private Sub PasteSuperBull(ByVal ws As Worksheet, ByVal issuer As String)
         values = Array("SuperBull", "USD", "TSM UN", 83, 3, 90, 5.75, 97.5, 6, _
                        "2026-10-13", "2026-10-20", "2027-04-20", "2027-04-23")
     End If
+    PutTable ws, headers, values
+End Sub
+
+' BEN 各家的寫法（不選 C3 的由表頭判斷上手）：
+'   MS：B 欄 Product、G 欄 Coupon Barrier；HSBC：沒有 Coupon Barrier；HSBC RCN：G 欄 KO Barrier；
+'   SG：Tenor (Months)；BNP：Strategy Code
+Private Sub PasteBEN(ByVal ws As Worksheet, ByVal issuer As String)
+    Dim headers As Variant, values As Variant
+
+    OrderFill_Clear
+    PutText ws.Range("A7"), "Initial price: Closing"
+    PutText ws.Range("A8"), "PG rate: 0%"
+
+    Select Case issuer
+        Case "MS"
+            ws.Range("C3").Value = "MS"
+            headers = Array("MS ID", "Product", "Stock 1", "Currency", "Tenor", "Put Strike", "Coupon Barrier", _
+                            "Bonus Coupon", "KI Barrier Type", "KI Barrier", "Lookback Period", "Note Price")
+            values = Array("123456789", "BEN", "MU UW", "USD", "3m", "90.00%", "90.00%", _
+                           "20.50%", "N/A", "N/A", "N/A", "98.00%")
+        Case "HSBC"
+            headers = Array("Product", "CCY", "Underlying 1", "Underlying 2", "Strike (%)", "Coupon (Flat)", _
+                            "Issue Price (%)", "Tenor (m)", "Size Cap", "Comment/Remarks", "ID")
+            values = Array("BEN", "USD", "TSM UN", "NVDA UW", "85.00%", "13.5", "97.5%", 6, "N/A", "", "12345")
+        Case "HSBC RCN"
+            headers = Array("Product", "Currency", "BBG Code 1", "Tenor (m)", "Put Strike (%)", "Bonus Coupon (%, flat)", _
+                            "KO Barrier (%)", "PR (%)", "Cost (%)", "Comment/Remarks", "ID")
+            values = Array("Bonus RCN", "USD", "AMD UQ", 4, "100%", "8.5%", "N/A", "N/A", "97.6%", "", "12345")
+        Case "SG"
+            ws.Range("C3").Value = "SG"
+            headers = Array("Product", "Underlying 1", "Tenor (Months)", "Currency", "Bonus Coupon (flat)", _
+                            "Coupon Barrier", "Put Strike", "KI Type", "KI", "Offer Price", "Participation Rate")
+            values = Array("DCN", "AAPL UW", 3, "USD", "12%", "88%", "88%", "N/A", "N/A", "99.5%", "0%")
+        Case "BNP"
+            headers = Array("Strategy Code", "Product", "Currency", "BBG Code 1", "Tenor (m)", "Put Strike (%)", _
+                            "Coupon Barrier (%)", "KI Barrier Type", "KI Barrier (%)", "Bonus Coupon (%, flat)", _
+                            "Note Price (%)", "Solve For")
+            values = Array("STRATEGY_1", "BEN", "USD", "MU UW", 3, 100, 100, "N/A", "N/A", 50, 96.5, "Issue Price")
+    End Select
     PutTable ws, headers, values
 End Sub
 

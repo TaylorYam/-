@@ -27,7 +27,7 @@ def last_value(s):
 
 
 def num(s):
-    s = last_value(s).replace('%', '').replace('\xa0', '').strip()
+    s = re.sub(r'\s+', '', last_value(s).replace('%', ''))   # 數字中間的空白不算（例：HSBC 的 82 .00%）
     s = re.sub(r'(?i)m$', '', s).strip()
     if not re.fullmatch(r'-?\d+(\.\d+)?', s): return None
     v = float(s)
@@ -104,9 +104,12 @@ def pick(d, *keys):
 # 信裡的 Product 寫法 → Variable!D 的商品名稱（對照 OrderFill.bas 的 NormProduct）
 PRODUCTS = {'fcn': 'FCN', 'fca': 'FCN', 'dac': 'DACN', 'dra': 'DACN', 'vmran': 'DACN', 'dacn': 'DACN',
             'express fcn': 'FCN_Express', 'superbull': 'Super Bull', 'super bull': 'Super Bull',
-            'range accrual': 'Range Accrual'}
+            'range accrual': 'Range Accrual', 'ben': 'Regular BEN', 'regular ben': 'Regular BEN',
+            'ben with lookback': 'Regular BEN', 'digital note': 'Digital BEN', 'dcn': 'Digital BEN',
+            'digit': 'Digital BEN', 'digit with lookback': 'Digital BEN', 'bonus rcn': 'Digital BEN'}
 # V2（Floor Coupon）填 0 的商品
-FLOOR_ZERO = ('FCN', 'DACN', 'FCN_Express', 'Super Bull')
+FLOOR_ZERO = ('FCN', 'DACN', 'FCN_Express', 'Super Bull', 'Regular BEN', 'Digital BEN')
+BEN = ('Regular BEN', 'Digital BEN')
 
 
 def ko_type(t, issuer):
@@ -143,7 +146,7 @@ def expected(rec, t, inl):
     both = {**inl, **t}
     tdcc = re.sub(r'\D', '', pick(both, 'tdcc', 'tdcccode'))
     e = {'A2': prod, 'B2': tdcc if len(tdcc) == 12 else '', 'C2': issuer,
-         'D2': pick(t, 'currency', 'curr').upper(), 'Q2': 'M', 'V2': 0 if prod in FLOOR_ZERO else None}
+         'D2': pick(t, 'currency', 'curr', 'ccy').upper(), 'Q2': 'M', 'V2': 0 if prod in FLOOR_ZERO else None}
     for k in range(1, 6):
         e['FGHIJ'[k - 1] + '2'] = pick(t, f'bbgcode{k}', f'underlying{k}', f'stock{k}').upper()
     pg = re.search(r'PG rate\s*:\s*([\d.]+)\s*%', rec['text'], re.I)
@@ -156,6 +159,15 @@ def expected(rec, t, inl):
         e['M2'] = num(pick(t, 'autocallbarrier') if hc else pick(t, 'superbulllevel'))
         e['N2'] = num(pick(t, 'autocallcouponflat', 'bonuscouponflat', 'autocallflatcoupon'))
         e['R2'] = ''; e['S2'] = ''
+    elif prod in BEN:   # E2 = Tenor（下面算），KO Barrier 有值時留空；M2 沒有 Coupon Barrier 時 = Strike
+        e['K2'] = num(pick(t, 'strike', 'putstrike'))
+        e['L2'] = 'Period End'
+        cb = pick(t, 'couponbarrier')
+        e['M2'] = num(cb) if cb else e['K2']
+        e['N2'] = num(pick(t, 'bonuscouponflat', 'bonuscoupon', 'couponflat'))
+        bt = barrier(t)
+        e['R2'] = bt
+        e['S2'] = None if bt == 'NONE' else num(pick(t, 'kibarrier', 'putki', 'ki'))
     else:   # FCN、DACN、FCN_Express
         e['E2'] = 0 if prod == 'FCN_Express' else num(pick(t, 'guaranteedperiodsm', 'guaranteedperiods',
                                                            'noncallperiodsm', 'noncallm', 'noncallableperiods'))
@@ -166,10 +178,11 @@ def expected(rec, t, inl):
         bt = barrier(t)
         e['R2'] = bt
         e['S2'] = None if bt == 'NONE' else num(pick(t, 'kibarrier', 'putki', 'ki'))
-    e['O2'] = num(pick(t, 'upfrontnoteprice', 'noteprice', 'cost', 'reoffer', 'offerprice'))
-    tenor = num(pick(t, 'tenorm', 'tenor'))
+    e['O2'] = num(pick(t, 'upfrontnoteprice', 'noteprice', 'cost', 'reoffer', 'offerprice', 'issueprice'))
+    tenor = num(pick(t, 'tenorm', 'tenor', 'tenormonths'))
     if tenor is None and pick(t, 'settlementfrequency').lower() == 'monthly': tenor = num(pick(t, 'noofperiods'))
     e['P2'] = tenor
+    if prod in BEN: e['E2'] = None if pick(t, 'kobarrier') else tenor
     e['O5'] = date(pick(both, 'tradedate', 'strikedate', 'initialvaluationdate'))
     e['O6'] = date(pick(both, 'issuedate', 'issuancedate', 'issuedatetcalendardays'))
     e['O7'] = date(pick(both, 'finalvaluationdate', 'finalfixingdate', 'redemptionvaluationdate', 'finalvaluation'))
