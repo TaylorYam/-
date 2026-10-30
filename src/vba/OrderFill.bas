@@ -5,6 +5,7 @@ Option Explicit
 ' 起單回填
 ' 把上手回覆的起單信件貼到「起單回填」工作表，
 ' 按「填入」回填 Term!A2:T2、Term!V2 與 Term!O5:O9；按「清空」清掉貼上區。
+' 保本型商品（目前只有 Range Accrual）要先在 E5 選商品才填。
 '
 ' 找值方式：依表頭名稱（不依欄位位置），支援三種排法
 '   1. 表格：一列表頭、下一列數值（大部分上手）
@@ -21,6 +22,9 @@ Private Const PASTE_TOP As Long = 7          ' 貼上區從第 7 列開始
 Private Const CELL_ISSUER_PICK As String = "C3"
 Private Const CELL_ISSUER_RESULT As String = "C4"
 Private Const CELL_TDCC_INPUT As String = "C5"
+Private Const CELL_PROTECTED_PICK As String = "E5"
+' E5 下拉選單的保本型商品（逗號分隔）；新增保本型商品時加在這裡，並在 OrderFill_Run 補上它的規則
+Private Const PROTECTED_PRODUCTS As String = "Range Accrual"
 
 Private Const PRI_TABLE As Long = 1
 Private Const PRI_PAIR As Long = 2
@@ -48,7 +52,7 @@ Public Sub OrderFill_Clear()
         .UnMerge
         .Clear
     End With
-    ws.Range(CELL_ISSUER_PICK & "," & CELL_ISSUER_RESULT & "," & CELL_TDCC_INPUT).ClearContents
+    ws.Range(CELL_ISSUER_PICK & "," & CELL_ISSUER_RESULT & "," & CELL_TDCC_INPUT & "," & CELL_PROTECTED_PICK).ClearContents
 
     ' 從信件貼上的圖片一併刪除（按鈕在貼上區上方，不受影響）
     For i = ws.Shapes.Count To 1 Step -1
@@ -85,9 +89,10 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Dim coupon As Variant, notePrice As Variant, upfront As Variant
     Dim tenor As Variant, periods As Variant
     Dim ki As Variant, pgRate As Variant, accrualBarrier As Variant, expressMult As Variant, benKO As Variant
-    Dim koType As String, barrierType As String, initPrice As String, fixedCpn As String
+    Dim floorCpn As Variant
+    Dim koType As String, barrierType As String, initPrice As String, fixedCpn As String, protPick As String
     Dim guarField As String, strikeField As String, koField As String, couponField As String
-    Dim isSuperBull As Boolean, isBEN As Boolean
+    Dim isSuperBull As Boolean, isBEN As Boolean, isRA As Boolean
     Dim ul(1 To 5) As String
     Dim tradeDate As Date, issueDate As Date, finalDate As Date, maturityDate As Date
     Dim hasTrade As Boolean, hasIssue As Boolean, hasFinal As Boolean, hasMaturity As Boolean
@@ -154,6 +159,41 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
 
     '--- 整理各欄位 ---
     product = NormProduct(GetVal("PRODUCT"))
+
+    ' MS 的 DACN 寫成 Range Accrual：有 Strike（Put Strike）就是 DACN
+    If issuer = "MS" And product = "Range Accrual" And HasField("STRIKE") Then
+        product = "DACN"
+        AddNote "MS 的 Product 是 Range Accrual，但有 Strike，判定為 DACN，A2 請確認"
+    End If
+
+    ' 保本型商品：E5 有選時 A2 = 選的商品；沒選但信看起來是 Range Accrual 時不填
+    protPick = Trim$(CStr(ws.Range(CELL_PROTECTED_PICK).Value))
+    If protPick <> "" Then
+        If InStr("," & PROTECTED_PRODUCTS & ",", "," & protPick & ",") = 0 Then
+            report = CELL_PROTECTED_PICK & " 的保本型商品「" & protPick & "」認不得，Term 沒有變更。" & vbCrLf & _
+                     "請從下拉選單選擇。"
+        ElseIf IsFlagged("PRODUCT") Then
+            report = CELL_PROTECTED_PICK & " 選的是 " & protPick & "，但信裡的 Product（" & GetVal("PRODUCT") & _
+                     "）認不得，Term 沒有變更。" & vbCrLf & "請確認商品；不是保本型商品時請清空 " & CELL_PROTECTED_PICK & "。"
+        ElseIf product <> "" And product <> protPick Then
+            report = CELL_PROTECTED_PICK & " 選的是 " & protPick & "，但這封信的商品是 " & product & _
+                     "，Term 沒有變更。" & vbCrLf & "請確認商品；不是保本型商品時請清空 " & CELL_PROTECTED_PICK & "。"
+        ElseIf protPick = "Range Accrual" And Not LooksLikeRA(product) Then
+            ' 例：E5 沒清掉，又貼了一封沒有 Product 的 SG FCN
+            report = CELL_PROTECTED_PICK & " 選的是 Range Accrual，但信裡沒有 Range Accrual 的欄位（Product、" & _
+                     "Coupon frequency=Callable frequency、DRA coupon、RA Rate），Term 沒有變更。" & vbCrLf & _
+                     "請確認商品；不是保本型商品時請清空 " & CELL_PROTECTED_PICK & "。"
+        End If
+        If report = "" Then product = protPick
+    ElseIf LooksLikeRA(product) Then
+        report = "這封信看起來是保本型商品（Range Accrual），Term 沒有變更。" & vbCrLf & _
+                 "請在 " & CELL_PROTECTED_PICK & " 的「保本型商品」下拉選單選擇商品後，再按一次「填入」。"
+    End If
+    If report <> "" Then
+        If Not silent Then MsgBox report, vbExclamation, "起單回填"
+        Exit Function
+    End If
+    isRA = (product = "Range Accrual")
 
     ccy = UCase$(Trim$(CStr(GetVal("CURRENCY"))))
 
@@ -224,12 +264,6 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         End If
     End If
 
-    ' MS 的 DACN 寫成 Range Accrual：有 Strike（Put Strike）就是 DACN
-    If issuer = "MS" And product = "Range Accrual" And (mSrc.Exists("STRIKE") Or IsFlagged("STRIKE")) Then
-        product = "DACN"
-        AddNote "MS 的 Product 是 Range Accrual，但有 Strike，判定為 DACN，A2 請確認"
-    End If
-
     ' Accrual Barrier（MS 的 DACN）沒有對應欄位；和 Strike 不同時提醒，K2 仍填 Strike
     accrualBarrier = NumField("ACCRUALBARRIER", 0)
     If Not IsEmpty(accrualBarrier) And Not IsEmpty(strike) Then
@@ -255,6 +289,10 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     End If
 
     tenor = NumField("TENOR", 0)
+    ' 寫成年（BARC 的 RA 是 5Y）：Range Accrual 在下面另外讀，其他產品的 P2 是月，留空
+    If IsEmpty(tenor) And mVal.Exists("TENOR") And Not isRA Then
+        FlagField "TENOR", "Tenor 是 " & ShowVal(GetVal("TENOR")) & "（年），P2 要填月數，留空"
+    End If
     If IsEmpty(tenor) And Not IsFlagged("TENOR") Then
         ' SG 沒有 Tenor：Settlement Frequency 是 Monthly 時 Tenor = No. of Periods
         periods = NumField("PERIODS", 0)
@@ -315,6 +353,29 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
 
     initPrice = NormInitPrice(GetVal("INITPRICE"))
 
+    ' Range Accrual 只填 A～F、O～Q、T、V：E2 是 Non-call、F2 是 CMS／CMT 10Y、P2 是年、V2 是 Floor
+    If isRA Then
+        guar = RANonCall()
+        ul(1) = RAUnderlying(GetVal("RAUL"))
+        For i = 2 To 5
+            ul(i) = ""
+        Next i
+        strike = Empty
+        koType = ""
+        koBarrier = Empty
+        coupon = Empty
+        barrierType = ""
+        ki = Empty
+        initPrice = ""
+        tenor = RATenor()
+        ' 玉山格式只有 UF：Note Price = 100 - UF
+        If IsEmpty(notePrice) And Not IsFlagged("PRICE") Then
+            upfront = NumField("RAUF", 0)
+            If Not IsEmpty(upfront) Then notePrice = Round(100 - upfront, 4)
+        End If
+        floorCpn = RAFloor(GetVal("RACOUPON"))
+    End If
+
     hasTrade = DateField("TRADE", tradeDate)
     hasIssue = DateField("ISSUE", issueDate)
     hasFinal = DateField("FINAL", finalDate)
@@ -323,16 +384,22 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     '--- 提醒：找不到的欄位（已提醒過格式或不一致的不重複）---
     If tdcc = "" Then WarnMissing "TDCC"
     If ccy = "" Then WarnMissing "CURRENCY"
-    If IsEmpty(guar) And Not isBEN Then WarnMissing guarField   ' BEN 的 E2 來自 Tenor，已另外提醒
+    If IsEmpty(guar) And Not isBEN And Not IsFlagged("NCY") Then   ' BEN 的 E2 來自 Tenor，已另外提醒
+        If isRA Then WarnMissing "CALLFEATURE" Else WarnMissing guarField
+    End If
     If ul(1) = "" Then WarnMissing "UL1"
-    If IsEmpty(strike) Then WarnMissing strikeField
-    If koType = "" Then WarnMissing "KOTYPE"
-    If IsEmpty(koBarrier) And koField <> strikeField Then WarnMissing koField
-    If IsEmpty(coupon) Then WarnMissing couponField
-    If IsEmpty(notePrice) And Not IsFlagged("UPFRONT") Then WarnMissing "PRICE"
-    If IsEmpty(tenor) Then WarnMissing "TENOR"
-    If barrierType = "" And Not isSuperBull Then WarnMissing "BARRIERTYPE"
-    If barrierType <> "" And barrierType <> "NONE" And IsEmpty(ki) Then WarnMissing "KI"
+    If Not isRA Then   ' Range Accrual 的 K～N、R、S、O9 不填
+        If IsEmpty(strike) Then WarnMissing strikeField
+        If koType = "" Then WarnMissing "KOTYPE"
+        If IsEmpty(koBarrier) And koField <> strikeField Then WarnMissing koField
+        If IsEmpty(coupon) Then WarnMissing couponField
+    End If
+    If IsEmpty(notePrice) And Not IsFlagged("UPFRONT") And Not IsFlagged("RAUF") Then WarnMissing "PRICE"
+    If IsEmpty(tenor) And Not IsFlagged("TENORY") Then WarnMissing "TENOR"
+    If Not isRA Then
+        If barrierType = "" And Not isSuperBull Then WarnMissing "BARRIERTYPE"
+        If barrierType <> "" And barrierType <> "NONE" And IsEmpty(ki) Then WarnMissing "KI"
+    End If
     If IsEmpty(pgRate) Then WarnMissing "PGRATE"
     If Not hasTrade Then
         tradeDate = Date
@@ -341,7 +408,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     If Not hasIssue Then WarnMissing "ISSUE"
     If Not hasFinal Then WarnMissing "FINAL"
     If Not hasMaturity Then WarnMissing "MATURITY"
-    If initPrice = "" Then WarnMissing "INITPRICE"
+    If initPrice = "" And Not isRA Then WarnMissing "INITPRICE"
 
     '--- 寫入 Term ---
     On Error GoTo Fail
@@ -365,12 +432,13 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     wsT.Range("N2").Value = coupon
     wsT.Range("O2").Value = notePrice
     wsT.Range("P2").Value = tenor
-    wsT.Range("Q2").Value = "M"
+    wsT.Range("Q2").Value = IIf(isRA, "Y", "M")
     wsT.Range("R2").Value = barrierType
     wsT.Range("S2").Value = ki
     wsT.Range("T2").Value = pgRate
-    ' Floor Coupon：FCN、DACN、FCN_Express、Super Bull、BEN 固定 0，其他產品留空
+    ' Floor Coupon：FCN、DACN、FCN_Express、Super Bull、BEN 固定 0；Range Accrual 是 Floor@ 或 0；其他產品留空
     If product = "FCN" Or product = "DACN" Or product = "FCN_Express" Or isSuperBull Or isBEN Then wsT.Range("V2").Value = 0
+    If isRA Then wsT.Range("V2").Value = floorCpn
 
     wsT.Range("O5").Value = Format$(tradeDate, "yyyy/mm/dd")
     wsT.Range("O9").Value = initPrice
@@ -460,6 +528,16 @@ Public Sub OrderFill_SetupCore(ByVal silent As Boolean)
         .Interior.Color = RGB(255, 242, 204)
     End With
 
+    ' 保本型商品：標題在左邊一格
+    ws.Range(CELL_PROTECTED_PICK).Offset(0, -1).Value = "保本型商品（保本型要先選）"
+    ws.Columns("D").ColumnWidth = 26
+    ws.Columns("E").ColumnWidth = 16
+    With ws.Range(CELL_PROTECTED_PICK).Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:=PROTECTED_PRODUCTS
+    End With
+    ws.Range(CELL_PROTECTED_PICK).Interior.Color = RGB(255, 242, 204)
+
     Set btn = ws.Buttons.Add(ws.Range("E1").Left, ws.Range("E1").Top, 90, 30)
     btn.Caption = "清空"
     btn.OnAction = "OrderFill_Clear"
@@ -526,6 +604,7 @@ Private Sub CollectFields(ByRef data As Variant)
     Dim nR As Long, nC As Long
     Dim r As Long, c As Long, r2 As Long
     Dim isHeader() As Boolean, isValueRow() As Boolean
+    Dim colField() As String
     Dim cnt As Long, valueRow As Long
     Dim key As String, s As String
     Dim segs As Variant, seg As Variant, k As Variant
@@ -552,22 +631,40 @@ Private Sub CollectFields(ByRef data As Variant)
 
         If cnt >= 3 Then
             isHeader(r) = True
+            ReDim colField(1 To nC)
+            For c = 1 To nC
+                key = CellKey(data(r, c))
+                If mHeaderMap.Exists(key) Then colField(c) = mHeaderMap(key)
+            Next c
+
+            ' 表頭下的說明列（例：玉山格式 Coupon 下的 Coupon frequency=Callable frequency）不是數值，
+            ' 改用說明當該欄的表頭
             valueRow = 0
             For r2 = r + 1 To IIf(r + 3 > nR, nR, r + 3)
-                For c = 1 To nC
-                    If mHeaderMap.Exists(CellKey(data(r, c))) Then
-                        If Not IsBlankVal(data(r2, c)) Then valueRow = r2
-                    End If
+                If IsHeaderNoteRow(data, colField, r2) Then
+                    For c = 1 To nC
+                        key = CellKey(data(r2, c))
+                        If colField(c) <> "" And mHeaderMap.Exists(key) Then colField(c) = mHeaderMap(key)
+                    Next c
+                Else
+                    For c = 1 To nC
+                        If colField(c) <> "" And Not IsBlankVal(data(r2, c)) Then
+                            valueRow = r2
+                            Exit For
+                        End If
+                    Next c
                     If valueRow > 0 Then Exit For
-                Next c
-                If valueRow > 0 Then Exit For
+                End If
             Next r2
 
             If valueRow > 0 Then
                 isValueRow(valueRow) = True
                 For c = 1 To nC
-                    key = CellKey(data(r, c))
-                    If mHeaderMap.Exists(key) Then RecordField mHeaderMap(key), data(valueRow, c), PRI_TABLE
+                    If colField(c) = "RACOUPON" Then
+                        RecordField colField(c), ColumnText(data, valueRow, c, isValueRow), PRI_TABLE
+                    ElseIf colField(c) <> "" Then
+                        RecordField colField(c), data(valueRow, c), PRI_TABLE
+                    End If
                 Next c
                 ' 後面幾列也是數值（一張表多筆單）：只讀第一列，但這些列也不做左右一組
                 r2 = valueRow + 1
@@ -646,12 +743,16 @@ Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As 
             End If
             key = "D" & CStr(CLng(d))
         Case "GUAR", "STRIKE", "KOBARRIER", "COUPON", "PRICE", "UPFRONT", "TENOR", "PERIODS", "KI", "PGRATE", _
-             "ACCRUALBARRIER", "EXPRESSMULT", "SBLEVEL", "ACBARRIER", "ACFREQ", "FLATCPN", "CPNBARRIER"
-            If Not ParseNumber(v, n, pct) Then
+             "ACCRUALBARRIER", "EXPRESSMULT", "SBLEVEL", "ACBARRIER", "ACFREQ", "FLATCPN", "CPNBARRIER", _
+             "TENORY", "NCY", "RAUF"
+            If ParseNumber(v, n, pct) Then
+                key = "N" & Trim$(Str$(Round(n, 6)))
+            ElseIf field = "TENOR" And ParseYears(v, n) Then
+                key = "Y" & Trim$(Str$(Round(n, 6)))   ' Tenor 寫成年（BARC 的 RA 是 5Y）；和月數的值算不一致
+            Else
                 FlagField field, FieldLabel(field) & " 格式不認得：" & ShowVal(raw) & "，" & MissingAction(field)
                 Exit Sub
             End If
-            key = "N" & Trim$(Str$(Round(n, 6)))
         Case "TDCC"
             key = "C" & NormTDCC(v)
         Case Else
@@ -670,6 +771,34 @@ Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As 
     mKey(field) = key
     mSrc(field) = ShowVal(raw) & "（" & PriLabel(pri) & "）"
 End Sub
+
+' 表頭下的說明列：表頭欄有字，而且都是認得的表頭
+Private Function IsHeaderNoteRow(ByRef data As Variant, ByRef colField() As String, ByVal r As Long) As Boolean
+    Dim c As Long, filled As Long
+
+    For c = 1 To UBound(data, 2)
+        If colField(c) <> "" And Not IsBlankVal(data(r, c)) Then
+            If Not mHeaderMap.Exists(CellKey(data(r, c))) Then Exit Function
+            filled = filled + 1
+        End If
+    Next c
+    IsHeaderNoteRow = (filled > 0)
+End Function
+
+' 玉山格式的配息拆成好幾列（Y1 : 8% p.a. fixed／Y2+ : 6% x n/N p.a, Floor@ 2.5%）：接著讀同一欄下面的列，
+' 到空白格或表頭為止；這些列不做左右一組
+Private Function ColumnText(ByRef data As Variant, ByVal r As Long, ByVal c As Long, _
+                            ByRef isValueRow() As Boolean) As String
+    Dim s As String, r2 As Long
+
+    s = CStr(data(r, c))
+    For r2 = r + 1 To UBound(data, 1)
+        If IsBlankVal(data(r2, c)) Or mHeaderMap.Exists(CellKey(data(r2, c))) Then Exit For
+        s = s & " " & CStr(data(r2, c))
+        isValueRow(r2) = True
+    Next r2
+    ColumnText = s
+End Function
 
 ' 第 r 列在 3 個以上的表頭下有值（例：MS 一張表三筆單）；第 r 列本身是表頭（下一張表）時不算
 Private Function IsExtraValueRow(ByRef data As Variant, ByVal headerRow As Long, ByVal r As Long) As Boolean
@@ -732,6 +861,11 @@ Private Function IsFlagged(ByVal field As String) As Boolean
     IsFlagged = mFlag.Exists(field)
 End Function
 
+' 信裡有這個欄位（包含格式不認得、不一致而留空的）
+Private Function HasField(ByVal field As String) As Boolean
+    HasField = mSrc.Exists(field) Or IsFlagged(field)
+End Function
+
 Private Sub WarnMissing(ByVal field As String)
     If Not IsFlagged(field) Then AddNote "信中找不到 " & FieldLabel(field) & "，" & MissingAction(field)
 End Sub
@@ -785,6 +919,15 @@ Private Function FieldLabel(ByVal field As String) As String
         Case "ACFREQ": FieldLabel = "Autocall Frequency／Autocall Freq／Autocall Date(one-time)"
         Case "FLATCPN": FieldLabel = "Autocall Coupon Flat／Autocall Flat Coupon／Bonus Coupon／Coupon Flat"
         Case "CPNBARRIER": FieldLabel = "Coupon Barrier"
+        Case "TENORY": FieldLabel = "Tenor (Y)"
+        Case "NCY": FieldLabel = "Non call period (Y)"
+        Case "CALLFEATURE": FieldLabel = "Non call period／Call Feature／Autocall Feature／NC"
+        Case "RAUF": FieldLabel = "UF"
+        Case "ISCALLABLE": FieldLabel = "Is Callable"
+        Case "RAUL": FieldLabel = "Underlying／Index／Condition_1"
+        Case "RACOUPON": FieldLabel = "Coupon（玉山格式）"
+        Case "DRACOUPON": FieldLabel = "DRA coupon"
+        Case "RARATE": FieldLabel = "RA Rate"
         Case Else: FieldLabel = field
     End Select
 End Function
@@ -858,6 +1001,19 @@ Private Sub BuildHeaderMap()
     ' Super Bull 的 Autocall Coupon、BEN 的 Bonus Coupon 都是 flat 配息，只在 Product 是 Super Bull 或 BEN 時才讀
     AddSyn "FLATCPN", "autocallcouponflat", "bonuscouponflat", "autocallflatcoupon", "bonuscoupon", "couponflat"
     AddSyn "CPNBARRIER", "couponbarrier"         ' BEN 專用
+    ' Range Accrual 專用：值只在 Product 是 Range Accrual 時才用（表頭仍算進每個商品的表頭偵測）；
+    ' RACOUPON、DRACOUPON、RARATE 也用來判斷信是不是 RA
+    AddSyn "TENORY", "tenory"                    ' BNP、玉山格式：年
+    AddSyn "RAUF", "uf"                          ' 玉山格式：UF，Note Price = 100 - UF
+    AddSyn "NCY", "noncallperiody"               ' BNP：年
+    AddSyn "CALLFEATURE", "callfeature", "autocallfeature", "nc"   ' 玉山格式 NC 1Y*3M、GS 的 Autocall Feature、BARC 的 1Y
+    AddSyn "ISCALLABLE", "iscallable"            ' BNP
+    AddSyn "RAUL", "underlying", "index", "condition1"   ' BNP 的 USS10Y、BARC 的 CMS10Y、玉山格式 USD SOFR CMS 10Y ≦ 5.0%
+    ' 玉山格式的 Coupon 欄（說明 Coupon frequency=Callable frequency 在表頭下一列或同一格）：
+    ' Y1 : 8% p.a. fixed／Y2+ : 6% x n/N p.a, Floor@ 2.5%
+    AddSyn "RACOUPON", "couponfrequencycallablefrequency", "couponcouponfrequencycallablefrequency"
+    AddSyn "DRACOUPON", "dracoupon"              ' BNP
+    AddSyn "RARATE", "rarate"                    ' BARC
 End Sub
 
 Private Sub AddSyn(ByVal field As String, ParamArray keys() As Variant)
@@ -948,6 +1104,8 @@ Private Function IssuerFromSignature(ByRef data As Variant) As String
         IssuerFromSignature = "UBS"
     ElseIf keys.Exists("priceid") Or keys.Exists("refspot1") Or keys.Exists("swapindex") Then
         IssuerFromSignature = "Citi"
+    ElseIf keys.Exists("rarate") Then   ' RA Rate：BARC 的 Range Accrual（也有 Reoffer，要比 CA 先比）
+        IssuerFromSignature = "BARC"
     ElseIf keys.Exists("datescheduleconfig") Or keys.Exists("reoffer") Or keys.Exists("wrapper") Then
         IssuerFromSignature = "CA"
     ElseIf keys.Exists("settlementfrequency") Or keys.Exists("offerprice") Or InStr(allText, "AUTOPRICER") > 0 Then
@@ -1117,7 +1275,8 @@ End Function
 ' Product 對應到 Variable!D 的寫法；上手各自的寫法先轉換：
 '   Citi 的 FCA → FCN；DAC（多數上手）、DRA（DBS）、VMRAN（UBS）→ DACN；Express FCN → FCN_Express；
 '   SuperBull（BNP、HSBC）→ Super Bull；BEN、BEN WITH LOOKBACK（MS）→ Regular BEN；
-'   Digital Note（CA）、DCN（SG）、DIGIT、DIGIT WITH LOOKBACK（MS）、Bonus RCN（HSBC）→ Digital BEN
+'   Digital Note（CA）、DCN（SG）、DIGIT、DIGIT WITH LOOKBACK（MS）、Bonus RCN（HSBC）→ Digital BEN；
+'   TW DRA（BNP）、RATES CRAN、RATES AUTOCALL RAN（SG）→ Range Accrual
 ' 轉換後不在 Variable!D 的留空並提醒
 Private Function NormProduct(ByVal v As Variant) As String
     Dim s As String
@@ -1133,6 +1292,7 @@ Private Function NormProduct(ByVal v As Variant) As String
         Case "SUPERBULL": s = "Super Bull"
         Case "BEN", "BEN WITH LOOKBACK": s = "Regular BEN"
         Case "DIGITAL NOTE", "DCN", "DIGIT", "DIGIT WITH LOOKBACK", "BONUS RCN": s = "Digital BEN"
+        Case "TW DRA", "RATES CRAN", "RATES AUTOCALL RAN": s = "Range Accrual"
     End Select
 
     Set wsV = ThisWorkbook.Worksheets("Variable")
@@ -1246,6 +1406,146 @@ Private Function NormInitPrice(ByVal v As Variant) As String
         NormInitPrice = "VWAP"
     Else
         FlagField "INITPRICE", "期初價格認不得：" & ShowVal(v) & "，O9 留空"
+    End If
+End Function
+
+'==================================================
+' Range Accrual
+'==================================================
+' Product 是 Range Accrual，或有 RA 才有的欄位（玉山格式的配息欄、BNP 的 DRA coupon、BARC 的 RA Rate）
+Private Function LooksLikeRA(ByVal product As String) As Boolean
+    LooksLikeRA = (product = "Range Accrual" Or HasField("RACOUPON") Or HasField("DRACOUPON") Or HasField("RARATE"))
+End Function
+
+' 去掉空白並轉大寫：USD SOFR CMS 10Y → USDSOFRCMS10Y
+Private Function CompactUpper(ByVal v As Variant) As String
+    CompactUpper = UCase$(Replace(CollapseSpaces(CStr(v)), " ", ""))
+End Function
+
+' Non-call（月）：BNP 的 Non call period (Y) 乘 12；玉山格式的 Call Feature（NC 1Y*3M、NC 3M*3M、NC 0.25Y X 3M）、
+' GS 的 Autocall Feature、BARC 的 NC（1Y）取 NC 後面的期間。Is Callable 是 No 或不是整月數時留空並提醒
+Private Function RANonCall() As Variant
+    Dim ncy As Variant, s As String, months As Double
+
+    RANonCall = Empty
+    If LCase$(CollapseSpaces(CStr(GetVal("ISCALLABLE")))) = "no" Then
+        FlagField "CALLFEATURE", "Is Callable 是 No，E2 留空"
+        Exit Function
+    End If
+
+    ncy = NumField("NCY", 0)
+    If Not IsEmpty(ncy) Then
+        months = ncy * 12
+    ElseIf mVal.Exists("CALLFEATURE") Then
+        s = CompactUpper(GetVal("CALLFEATURE"))
+        If Left$(s, 2) = "NC" Then s = Mid$(s, 3)
+        If Not LeadingPeriodMonths(s, months) Then
+            FlagField "CALLFEATURE", FieldLabel("CALLFEATURE") & " 認不得：" & ShowVal(GetVal("CALLFEATURE")) & "，E2 留空"
+            Exit Function
+        End If
+    Else
+        Exit Function
+    End If
+
+    If months <> Int(months) Then
+        FlagField "CALLFEATURE", "Non-call 是 " & months & " 個月，不是整月數，E2 留空"
+        Exit Function
+    End If
+    RANonCall = months
+End Function
+
+' 開頭的期間換成月：1Y*3M → 12、0.25YX3M → 3、3M*3M → 3（後面的字不看）
+Private Function LeadingPeriodMonths(ByVal s As String, ByRef months As Double) As Boolean
+    Dim i As Long
+
+    i = 1
+    Do While i <= Len(s)
+        If Not Mid$(s, i, 1) Like "[0-9.]" Then Exit Do
+        i = i + 1
+    Loop
+    If Not IsPlainNumber(Left$(s, i - 1)) Then Exit Function
+    Select Case Mid$(s, i, 1)
+        Case "Y": months = Val(Left$(s, i - 1)) * 12
+        Case "M": months = Val(Left$(s, i - 1))
+        Case Else: Exit Function
+    End Select
+    LeadingPeriodMonths = True
+End Function
+
+' 「數字 + Y」：5Y → 5
+Private Function ParseYears(ByVal v As Variant, ByRef n As Double) As Boolean
+    Dim s As String
+
+    If VarType(v) <> vbString Then Exit Function
+    s = CompactUpper(v)
+    If Right$(s, 1) <> "Y" Then Exit Function
+    s = Left$(s, Len(s) - 1)
+    If Not IsPlainNumber(s) Then Exit Function
+    n = Val(s)
+    ParseYears = True
+End Function
+
+' Tenor（年）：Tenor (Y)（BNP、玉山格式）；BARC 的 Tenor 寫成 5Y。沒寫單位的 Tenor 不猜
+Private Function RATenor() As Variant
+    Dim y As Double
+
+    RATenor = NumField("TENORY", 0)
+    If Not IsEmpty(RATenor) Or IsFlagged("TENORY") Or Not mVal.Exists("TENOR") Then Exit Function
+    If ParseYears(GetVal("TENOR"), y) Then
+        RATenor = y
+    Else
+        FlagField "TENOR", "Tenor 是 " & ShowVal(GetVal("TENOR")) & "，沒有寫年（Y），P2 留空"
+    End If
+End Function
+
+' 標的只有格式裡的兩種：連 CMS → USD SOFR CMS 10Y（USS10Y、CMS10Y、USD SOFR CMS 10Y ≦ 5.0%）；
+' 連 CMT → USD CMT 10Y（UCMT10、USD CMT 10Y）。其他（例：股權連結的 TSM UN ≧ 75%、EUR CMS 10Y）留空並提醒
+Private Function RAUnderlying(ByVal v As Variant) As String
+    Dim s As String, rateCount As Long
+
+    If IsBlankVal(v) Then Exit Function
+    s = CompactUpper(v)
+    rateCount = (Len(s) - Len(Replace(Replace(s, "CMS", ""), "CMT", ""))) \ 3
+    If s = "USS10Y" Or (rateCount = 1 And IsUSDRate(s, "CMS10Y")) Then
+        RAUnderlying = "USD SOFR CMS 10Y"
+    ElseIf s = "UCMT10" Or (rateCount = 1 And IsUSDRate(s, "CMT10Y")) Then
+        RAUnderlying = "USD CMT 10Y"
+    Else
+        FlagField "UL1", "標的認不得：" & ShowVal(v) & "，F2 留空（Range Accrual 只有 USD SOFR CMS 10Y、USD CMT 10Y）"
+    End If
+End Function
+
+' s 有 rate（CMS10Y／CMT10Y），前面只有 USD、SOFR 或條件符號（0%≦USDSOFRCMS10Y≦5.0%）；EURCMS10Y 不算
+Private Function IsUSDRate(ByVal s As String, ByVal rate As String) As Boolean
+    Dim p As Long, prefix As String
+
+    p = InStr(s, rate)
+    If p = 0 Then Exit Function
+    prefix = Left$(s, p - 1)
+    If Right$(prefix, 4) = "SOFR" Then prefix = Left$(prefix, Len(prefix) - 4)
+    If Right$(prefix, 3) = "USD" Then prefix = Left$(prefix, Len(prefix) - 3)
+    IsUSDRate = Not (Right$(prefix, 1) Like "[A-Z]")
+End Function
+
+' Floor Coupon：配息欄有 Floor@ 2.5% 時填該值，沒有填 0；Floor 後面讀不到數字時留空並提醒
+Private Function RAFloor(ByVal v As Variant) As Variant
+    Dim s As String, p As Long, n As Double, pct As Boolean
+
+    s = CompactUpper(v)
+    p = InStr(s, "FLOOR")
+    If p = 0 Then
+        RAFloor = 0
+        Exit Function
+    End If
+    s = Mid$(s, p + 5)
+    If Left$(s, 1) = "@" Then s = Mid$(s, 2)
+    p = InStr(s, "%")
+    If p > 0 Then s = Left$(s, p)
+    If ParseNumber(s, n, pct) Then
+        RAFloor = Round(n, 4)
+    Else
+        RAFloor = Empty
+        FlagField "RACOUPON", "Floor 認不得：" & ShowVal(v) & "，V2 留空"
     End If
 End Function
 

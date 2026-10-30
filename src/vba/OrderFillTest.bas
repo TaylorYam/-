@@ -82,7 +82,7 @@ End Function
 
 '==================================================
 ' 清空回歸測試（#4）：選過 C3 後 Excel 會加一個隱藏的下拉框 Shape，按清空不能因此出現 1004；
-' 貼上區的圖片要刪掉，按鈕與 C3 下拉清單要保留。
+' 貼上區的圖片要刪掉，按鈕與 C3 下拉清單要保留；E5 的保本型商品要清掉。
 '==================================================
 Public Sub Test_OrderFill_Clear()
     Dim result As String
@@ -110,6 +110,7 @@ Public Function Test_OrderFill_ClearReport() As String
     ws.Range("C3").Select    ' 讓 Excel 建立 C3 下拉清單的隱藏下拉框
     Set shp = ws.Shapes.AddShape(msoShapeRectangle, ws.Range("B8").Left, ws.Range("B8").Top, 40, 20)
     shp.Name = PASTED_NAME   ' 代替信件貼上的圖片
+    ws.Range("E5").Value = "Range Accrual"
 
     On Error Resume Next
     OrderFill_Clear
@@ -127,6 +128,7 @@ Public Function Test_OrderFill_ClearReport() As String
         fails = fails & "  按鈕數量 預期 " & btnCount & " 實際 " & ws.Buttons.Count & vbCrLf
     End If
     If Not HasListValidation(ws.Range("C3")) Then fails = fails & "  C3 下拉清單不見了" & vbCrLf
+    If Not IsEmpty(ws.Range("E5").Value) Then fails = fails & "  E5 保本型商品沒有清掉" & vbCrLf
 
     If fails = "" Then
         Test_OrderFill_ClearReport = "PASS"
@@ -519,16 +521,151 @@ Public Function Test_OrderFill_RulesReport() As String
 
     PasteMSRangeAccrual wsP
     wsP.Range("E9:E10").ClearContents
-    SetTermCell wsT.Range("V2"), 0
-    fails = RunFill(report)
-    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual") & CompareCell(wsT.Range("V2"), "")
-    Tally "MS：Range Accrual 沒有 Strike → 照填 Range Accrual", fails, passCount, total, detail
+    SetTermCell wsT.Range("V2"), 5
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "看起來是保本型商品") & CompareCell(wsT.Range("V2"), 5)
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "MS：Range Accrual 沒有 Strike、沒選保本型商品 → 不填入（V2 不變）", fails, passCount, total, detail
 
     PasteMSRangeAccrual wsP
     wsP.Range("C3").Value = "BARC"
+    wsP.Range("E5").Value = "Range Accrual"
     fails = RunFill(report)
-    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual")
-    Tally "不是 MS 的 Range Accrual → 照填，不判定 DACN", fails, passCount, total, detail
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual") & CompareCell(wsT.Range("K2"), "")
+    Tally "不是 MS 的 Range Accrual（選了保本型商品）→ 不判定 DACN", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN"
+    SetTermCell wsT.Range("V2"), Empty
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual") & CompareCell(wsT.Range("C2"), "CA") & _
+                               CompareCell(wsT.Range("D2"), "USD") & CompareCell(wsT.Range("E2"), 12) & _
+                               CompareCell(wsT.Range("F2"), "USD SOFR CMS 10Y") & CompareCell(wsT.Range("G2"), "") & _
+                               CompareCell(wsT.Range("K2"), "") & CompareCell(wsT.Range("L2"), "") & _
+                               CompareCell(wsT.Range("M2"), "") & CompareCell(wsT.Range("N2"), "") & _
+                               CompareCell(wsT.Range("O2"), 95.5) & CompareCell(wsT.Range("P2"), 10) & _
+                               CompareCell(wsT.Range("Q2"), "Y") & CompareCell(wsT.Range("R2"), "") & _
+                               CompareCell(wsT.Range("S2"), "") & CompareCell(wsT.Range("T2"), 100) & _
+                               CompareCell(wsT.Range("V2"), 0) & CompareCell(wsT.Range("O9"), "")
+    fails = fails & ExpectNoNote(report, "找不到 Strike") & ExpectNoNote(report, "找不到 KO") & _
+                    ExpectNoNote(report, "Coupon") & ExpectNoNote(report, "找不到 Barrier Type") & _
+                    ExpectNoNote(report, "找不到 期初價格") & ExpectNoNote(report, "不只一列")
+    Tally "RA（玉山格式，表頭說明列、配息兩列）：E2 = NC、F2 = CMS 10Y、O2 = 100 - UF、P2 年、Q2 Y、V2 0，其他欄留空", _
+          fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN1"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), 12) & CompareCell(wsT.Range("F2"), "USD SOFR CMS 10Y") & _
+                               CompareCell(wsT.Range("O2"), 95.5) & CompareCell(wsT.Range("V2"), 0)
+    Tally "RA（玉山格式，Coupon 說明和表頭同一格）", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN", False
+    SetTermCell wsT.Range("V2"), 5
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "看起來是保本型商品") & CompareCell(wsT.Range("V2"), 5)
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "RA（玉山格式）沒選保本型商品 → 不填入（V2 不變）", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN"
+    PutText wsP.Range("D12"), "Y2+: 5.0% x n/N p.a, Floor@ 1.5%"
+    PutText wsP.Range("G11"), "NC 0.25Y X 3M"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("V2"), 1.5) & CompareCell(wsT.Range("E2"), 3)
+    Tally "RA：配息第二列的 Floor@ → V2、NC 0.25Y → E2 3", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN"
+    PutText wsP.Range("E11"), "TSM UN " & ChrW(&H2267) & " 75%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("F2"), "") & ExpectNote(report, "標的認不得") & _
+                               ExpectNoNote(report, "找不到 標的")
+    Tally "RA：標的不是 CMS／CMT 10Y → F2 留空並提醒", fails, passCount, total, detail
+
+    PasteRA wsP, "BNP"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("A2"), "Range Accrual") & CompareCell(wsT.Range("C2"), "BNP") & _
+                               CompareCell(wsT.Range("E2"), 12) & CompareCell(wsT.Range("F2"), "USD CMT 10Y") & _
+                               CompareCell(wsT.Range("O2"), 96) & CompareCell(wsT.Range("P2"), 15) & _
+                               CompareCell(wsT.Range("Q2"), "Y") & CompareCell(wsT.Range("V2"), 0) & _
+                               CompareCell(wsT.Range("O6"), "2026/10/20") & CompareCell(wsT.Range("O8"), "2041/10/21")
+    Tally "RA（BNP）：TW DRA、Non call period (Y)、UCMT10 → USD CMT 10Y", fails, passCount, total, detail
+
+    PasteRA wsP, "BNP", False
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "看起來是保本型商品")
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "RA（BNP）TW DRA 沒選保本型商品 → 不填入", fails, passCount, total, detail
+
+    PasteRA wsP, "BARC"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("C2"), "BARC") & CompareCell(wsT.Range("E2"), 12) & _
+                               CompareCell(wsT.Range("F2"), "USD SOFR CMS 10Y") & CompareCell(wsT.Range("O2"), 96) & _
+                               CompareCell(wsT.Range("P2"), 5) & CompareCell(wsT.Range("Q2"), "Y")
+    fails = fails & ExpectNoNote(report, "Tenor")
+    Tally "RA（BARC，RA Rate 判斷上手，有 Reoffer 也不是 CA）：Tenor 5Y → P2 5、NC 1Y → E2 12、CMS10Y", _
+          fails, passCount, total, detail
+
+    PasteRA wsP, "BARC", False
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "看起來是保本型商品")
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "RA（BARC）有 RA Rate、沒選保本型商品 → 不填入", fails, passCount, total, detail
+
+    PasteRA wsP, "BNP"
+    PutText wsP.Range("L10"), "No"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), "") & ExpectNote(report, "Is Callable 是 No") & _
+                               ExpectNoNote(report, "找不到 Non call")
+    Tally "RA（BNP）：Is Callable 是 No → E2 留空並提醒", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN"
+    wsP.Range("G11").ClearContents
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("E2"), "") & ExpectNote(report, "找不到 Non call period") & _
+                               ExpectNoNote(report, "Guaranteed")
+    Tally "RA：沒有 Call Feature → E2 留空，提醒找不到 Non call period", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN"
+    PutText wsP.Range("E11"), "EUR CMS 10Y " & ChrW(&H2266) & " 3.0%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("F2"), "") & ExpectNote(report, "標的認不得")
+    Tally "RA：EUR CMS 10Y 不是格式裡的標的 → F2 留空並提醒", fails, passCount, total, detail
+
+    PasteMSRangeAccrual wsP
+    wsP.Range("E5").Value = "Range Accrual"
+    SetTermCell wsT.Range("V2"), 5
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "這封信的商品是 DACN") & CompareCell(wsT.Range("V2"), 5)
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "選了保本型商品、MS 有 Strike（判定 DACN）→ 不填入", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A10"), "XYZ NOTE"
+    wsP.Range("E5").Value = "Range Accrual"
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "Product（XYZ NOTE）認不得")
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "選了保本型商品、Product 認不得 → 不填入", fails, passCount, total, detail
+
+    PasteSGNoProduct wsP
+    wsP.Range("E5").Value = "Range Accrual"
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "信裡沒有 Range Accrual 的欄位")
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "選了保本型商品、信沒有 Product 也沒有 RA 欄位（SG FCN）→ 不填入", fails, passCount, total, detail
+
+    PasteBase wsP
+    wsP.Range("E5").Value = "Range Accrual"
+    SetTermCell wsT.Range("V2"), 5
+    ok = OrderFill_Run(True, report)
+    fails = ExpectNote(report, "這封信的商品是 FCN") & CompareCell(wsT.Range("V2"), 5)
+    If ok Then fails = fails & "  應該不填入" & vbCrLf
+    Tally "選了保本型商品、信裡是 FCN → 不填入（V2 不變）", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("J10"), "5Y"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("P2"), "") & CompareCell(wsT.Range("Q2"), "M") & _
+                               ExpectNote(report, "Tenor 是 5Y（年）")
+    Tally "不是 RA 的 Tenor 寫成年 → P2 留空並提醒", fails, passCount, total, detail
 
     PasteMSRangeAccrual wsP
     wsP.Range("Q9").Value = "Accrual Barrier"
@@ -884,6 +1021,52 @@ Private Sub PasteBEN(ByVal ws As Worksheet, ByVal issuer As String)
                             "Coupon Barrier (%)", "KI Barrier Type", "KI Barrier (%)", "Bonus Coupon (%, flat)", _
                             "Note Price (%)", "Solve For")
             values = Array("STRATEGY_1", "BEN", "USD", "MU UW", 3, 100, 100, "N/A", "N/A", 50, 96.5, "Issue Price")
+    End Select
+    PutTable ws, headers, values
+End Sub
+
+' Range Accrual 各家的寫法（pickProtected = True 時在 E5 選 Range Accrual）：
+'   ESUN：玉山的詢價格式（CA、GS、JPM、SG、Nomura），沒有 Product。貼上後和信裡一樣分成好幾列：
+'     第 9 列表頭（D 欄 Coupon、E 欄 Condition_1、F 欄 Target redemption、G 欄 Call Feature、H 欄 UF）、
+'     第 10 列表頭說明、第 11 列數值、第 12 列配息的第二行；
+'   ESUN1：同上，但 Coupon 的說明和表頭在同一格、配息只有一列；
+'   BNP：Product 是 TW DRA，不選 C3 由 Client Ref 判斷上手；BARC：Tenor 5Y、NC 1Y，不選 C3 由 RA Rate 判斷上手
+Private Sub PasteRA(ByVal ws As Worksheet, ByVal style As String, Optional ByVal pickProtected As Boolean = True)
+    Dim headers As Variant, values As Variant
+
+    OrderFill_Clear
+    If pickProtected Then ws.Range("E5").Value = "Range Accrual"
+    PutText ws.Range("A8"), "PG rate: 100%"
+
+    Select Case style
+        Case "ESUN"
+            ws.Range("C3").Value = "CA"
+            headers = Array("Tag", "Tenor (Y)", "Currency", "Coupon", "Condition_1", "Target redemption", _
+                            "Call Feature", "UF")
+            values = Array("E", 10, "USD", "Y1 : 7.00% p.a. fixed", "USD SOFR CMS 10Y " & ChrW(&H2266) & " 5.0%", _
+                           "25%", "NC 1Y*3M", "4.50%")
+            PutTable ws, headers, values
+            ws.Rows(10).Insert
+            PutText ws.Range("D10"), "Coupon frequency=Callable frequency"
+            PutText ws.Range("F10"), "(No Guaranteed)"
+            PutText ws.Range("D12"), "Y2+ : 6.0% x n/N p.a"
+            Exit Sub
+        Case "ESUN1"
+            ws.Range("C3").Value = "CA"
+            headers = Array("Tag", "Tenor (Y)", "Currency", "Coupon Coupon frequency=Callable frequency", "Condition_1", _
+                            "Call Feature", "UF")
+            values = Array("E", 10, "USD", "Y1 : 7.00% p.a. fixed Y2+ : 6.0% x n/N p.a", _
+                           "USD SOFR CMS 10Y " & ChrW(&H2266) & " 5.0%", "NC 1Y*3M", "4.50%")
+        Case "BNP"
+            headers = Array("Client Ref", "Product", "Currency", "Tenor (Y)", "Underlying", "Lower barrier (%)", _
+                            "Upper barrier (%)", "Fixed coupon period (Y)", "Fixed coupon (%)", "DRA coupon (%)", _
+                            "Upfront/Note Price (%)", "Is Callable", "Non call period (Y)", "Issue Date", "Redemption Date")
+            values = Array("REF_1", "TW DRA", "USD", 15, "UCMT10", "NA", 5, 1, 7, 6, 96, "Yes", 1, _
+                           "2026-10-20", "2041-10-21")
+        Case "BARC"
+            headers = Array("Ccy", "Tenor", "NC", "Call Freq", "Fixed Rate", "RA Rate", "Index", "Lower Barrier", _
+                            "Upper Barrier", "Reoffer")
+            values = Array("USD", "5Y", "1Y", "3M", "7.00%", "5.00%", "CMS10Y", "NA", "5.00%", "96.00%")
     End Select
     PutTable ws, headers, values
 End Sub
