@@ -73,10 +73,11 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
   - E2（Guaranteed Period）= Tenor，L2（KO Type）固定填 `Period End`。
   - 信裡 `KO Barrier` 有值時可能是 BEN with KO（Guaranteed Period 應為 1M），樣本沒有這種信，所以 E2 留空並提醒，請依 TS 填入。HSBC `Bonus RCN` 的 `KO Barrier` 欄是 `N/A` 時照一般 BEN 處理。
   - K2 ← `Put Strike`／`Strike`。M2 ← `Coupon Barrier`；信裡沒有（HSBC、CA、JPM、Natixis）時 = Strike；和 Strike 不同時填 Coupon Barrier 並提醒。
-  - N2 ← `Bonus Coupon`／`Bonus Coupon (%, flat)`／`Coupon (Flat)`／`Coupon Flat (%)`，只在 Product 是 BEN 或 Super Bull 時才讀。
-  - 其他欄位和 FCN 相同。BEN 沒有 KI，`KI Barrier Type`／`KI` 是 `N/A`、`None` 時 R2 填 `NONE`。另認 `CCY`（Currency）、`Issue Price (%)`（Note Price）、`Tenor (Months)`（Tenor）。
+  - N2 ← `Bonus Coupon`／`Bonus Coupon (%, flat)`／`Coupon (Flat)`／`Coupon Flat (%)`。這些表頭和 Super Bull 的 Autocall Coupon 是同一組，只在 Product 是 BEN 或 Super Bull 時才填入 N2；`Coupon Barrier` 只在 BEN 時填入 M2。其他商品的信裡有這些表頭、值又認不得時，仍會提醒。
+  - 其他欄位和 FCN 相同。BEN 沒有 KI，`KI Barrier Type`／`KI` 是 `N/A`、`None` 時 R2 填 `NONE`。
   - `Participation`、`Lookback Period` 在 `Term` 沒有對應欄位，不讀。
-  - HSBC、BNP 的 BEN 信沒有 TDCC：上手由表頭判斷（HSBC 的 `Comment/Remarks` 加 `ID`、BNP 的 `Strategy Code`）。
+  - HSBC、BNP 的 BEN 信沒有 TDCC，上手由表頭判斷（見下一條）。
+- 隨 BEN 新增、所有商品都適用的表頭：`CCY`（Currency）、`Issue Price (%)`（Note Price）、`Tenor (Months)`（Tenor）；上手的表頭特徵另認 HSBC 的 `Comment/Remarks` 加 `ID`、BNP 的 `Strategy Code`。
 - 信中沒有 Product 時不預設，A2 留空並提醒。只有 SG 例外：`AutoCall` 是單一數字、有 `Put Strike`，而且 `Fixed Coupons` 是 `All Periods` 時推定為 `FCN`、是 `First Period` 或 `First Two Periods` 時推定為 `DACN`，並提醒確認。SG 的樣本只有一封 FCN 和幾封 DACN，無法確認 SG 其他類似產品（例如 `FCN_Stepdown`）的信不會也符合條件，所以推定後請一定核對 A2；如果改成其他產品，V2 的 0 不會自動清掉，請一併清空。
 - Floor Coupon（V2）：A2 是 `FCN`、`DACN`、`FCN_Express`、`Super Bull`、`Regular BEN` 或 `Digital BEN`（包含 SG 推定、Citi 的 `FCA`、MS 判定的 DACN）時填 0；其他產品（包含 `FCN_Stepdown` 等變體）或 A2 留空時清空，避免上一筆的值留到下一筆。
 - 信中沒有 Trade date 時 O5 填今天。
@@ -129,14 +130,14 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 新增商品時，先改 `check.py` 再跑上面三個步驟：在 `expected()` 補上該商品各欄的規則（可參考 Super Bull 的寫法），把商品寫法加進 `PRODUCTS`；V2 填 0 的商品要加進 `FLOOR_ZERO`。如果該商品的表頭認不到 3 個以上，表格會讀不到，這時再補 `HEADER_WORDS`。PR 要寫統計結果（一致〔其中用到推算〕、不一致、略過各幾封）與不一致的原因，但不要寫出 TDCC、價格、名目本金等交易資料。
 
-已驗證的商品（2026-10-29）：
+已驗證的商品（Super Bull、DACN、FCN_Express 是 2026-10-29；BEN 是 2026-10-30，同一天重跑前三個商品，每封結果都不變）：
 
 | 商品 | 信件 | 一致 | 其中用到推算 | 不一致 | 略過 |
 |---|---|---|---|---|---|
 | Super Bull | 142 | 135 | 42 | 7 | 0 |
 | DACN | 85 | 81 | 48 | 0 | 4 |
 | FCN_Express | 217 | 148 | 0 | 4 | 65 |
-| Regular BEN、Digital BEN（2026-10-30） | 143 | 141 | 114 | 2 | 0 |
+| Regular BEN、Digital BEN | 143 | 141 | 114 | 2 | 0 |
 
 不一致的都是上面列的已知情況：Super Bull 是 BNP 一封信兩筆單 5 封、`MRVL`／`UW` 拆成兩段 2 封；FCN_Express 是 BARC 一封信兩筆單 4 封；BEN 是 MS 一封信兩張表 2 封。BEN 另有 7 封是一張表多筆單（MS 4 封、HSBC 3 封），只讀第一列並提醒。
 
@@ -211,10 +212,11 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
   - E2 (Guaranteed Period) = Tenor, and L2 (KO Type) is always `Period End`.
   - When `KO Barrier` has a value, the trade may be a BEN with KO (Guaranteed Period should be 1M). There is no such mail in the sample, so E2 is left blank with a warning; fill it from the TS. When HSBC's `Bonus RCN` has `N/A` in `KO Barrier`, it is handled as an ordinary BEN.
   - K2 ← `Put Strike` / `Strike`. M2 ← `Coupon Barrier`; when the mail has none (HSBC, CA, JPM, Natixis), M2 = Strike; when it differs from Strike, M2 takes the Coupon Barrier with a warning.
-  - N2 ← `Bonus Coupon` / `Bonus Coupon (%, flat)` / `Coupon (Flat)` / `Coupon Flat (%)`, read only when Product is BEN or Super Bull.
-  - Other columns follow FCN. BEN has no KI; when `KI Barrier Type` / `KI` is `N/A` or `None`, R2 is `NONE`. `CCY` (Currency), `Issue Price (%)` (Note Price), and `Tenor (Months)` (Tenor) are also recognised.
+  - N2 ← `Bonus Coupon` / `Bonus Coupon (%, flat)` / `Coupon (Flat)` / `Coupon Flat (%)`. These headers belong to the same set as Super Bull's Autocall Coupon and go into N2 only when Product is BEN or Super Bull; `Coupon Barrier` goes into M2 only for BEN. In a mail for another product, an unreadable value under one of them still triggers a warning.
+  - Other columns follow FCN. BEN has no KI; when `KI Barrier Type` / `KI` is `N/A` or `None`, R2 is `NONE`.
   - `Participation` and `Lookback Period` have no column in `Term` and are not read.
-  - HSBC and BNP BEN mails have no TDCC: the issuer is detected from the headers (HSBC's `Comment/Remarks` with `ID`, BNP's `Strategy Code`).
+  - HSBC and BNP BEN mails have no TDCC, so the issuer is detected from the headers (see the next item).
+- Headers added with BEN that apply to every product: `CCY` (Currency), `Issue Price (%)` (Note Price), and `Tenor (Months)` (Tenor). Issuer detection also recognises HSBC's `Comment/Remarks` with `ID` and BNP's `Strategy Code`.
 - When the mail has no Product, nothing is assumed: A2 is left blank with a warning. SG is the only exception: when `AutoCall` is a single number and there is a `Put Strike`, the product is inferred as `FCN` if `Fixed Coupons` is `All Periods` and as `DACN` if it is `First Period` or `First Two Periods`, with a warning to confirm it. Only one SG FCN sample and a few SG DACN samples are available, so it is not known whether mails for similar SG products (such as `FCN_Stepdown`) also meet these conditions; always check A2 after an inference. If you change it to another product, the 0 in V2 is not cleared automatically, so clear it as well.
 - Floor Coupon (V2): 0 when A2 is `FCN`, `DACN`, `FCN_Express`, `Super Bull`, `Regular BEN`, or `Digital BEN` (including the SG inference, Citi's `FCA`, and MS's DACN); cleared for any other product (including variants such as `FCN_Stepdown`) or when A2 is blank, so a previous trade's value is not carried over.
 - When the mail has no Trade date, O5 is set to today.
@@ -267,14 +269,14 @@ When the tool does not fill at all (for example, the issuer cannot be detected),
 
 For a new product, update `check.py` first and then run the three steps above: add the product's per-column rules to `expected()` (Super Bull is a good model) and its spellings to `PRODUCTS`; add it to `FLOOR_ZERO` if V2 is 0 for it. If fewer than 3 of the product's headers are recognised, the table is not read; in that case also extend `HEADER_WORDS`. In the PR, report the counts (match [of which calculated], mismatch, skipped) and the reason for each mismatch, but do not include trade data such as TDCC, prices, or notional.
 
-Products checked so far (2026-10-29):
+Products checked so far (Super Bull, DACN, and FCN_Express on 2026-10-29; BEN on 2026-10-30, when the first three were also rerun with every mail's result unchanged):
 
 | Product | Mails | Match | Of which calculated | Mismatch | Skipped |
 |---|---|---|---|---|---|
 | Super Bull | 142 | 135 | 42 | 7 | 0 |
 | DACN | 85 | 81 | 48 | 0 | 4 |
 | FCN_Express | 217 | 148 | 0 | 4 | 65 |
-| Regular BEN, Digital BEN (2026-10-30) | 143 | 141 | 114 | 2 | 0 |
+| Regular BEN, Digital BEN | 143 | 141 | 114 | 2 | 0 |
 
 All mismatches are the known cases listed above: for Super Bull, 5 BNP mails with two trades and 2 with `MRVL` / `UW` split; for FCN_Express, 4 BARC mails with two trades; for BEN, 2 MS mails with two tables. Another 7 BEN mails hold several trades in one table (4 MS, 3 HSBC); only the first row is read, with a warning.
 

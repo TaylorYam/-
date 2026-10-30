@@ -189,9 +189,11 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         If mSrc.Exists("CPNBARRIER") Or IsFlagged("CPNBARRIER") Then koField = "CPNBARRIER" Else koField = strikeField
     End If
 
-    guar = NumField(guarField, 0)
-    ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月（0 → 1）
-    If issuer = "Citi" And Not isSuperBull And Not IsEmpty(guar) Then guar = guar + 1
+    If Not isBEN Then   ' BEN 的 E2 = Tenor，在下面另外算
+        guar = NumField(guarField, 0)
+        ' Citi 的 Non Callable Periods 比我們的 Guaranteed Period 少 1 個月（0 → 1）
+        If issuer = "Citi" And Not isSuperBull And Not IsEmpty(guar) Then guar = guar + 1
+    End If
 
     strike = NumField(strikeField, 3)
     If koField = strikeField Then
@@ -567,7 +569,13 @@ Private Sub CollectFields(ByRef data As Variant)
                     key = CellKey(data(r, c))
                     If mHeaderMap.Exists(key) Then RecordField mHeaderMap(key), data(valueRow, c), PRI_TABLE
                 Next c
-                If MoreValueRow(data, r, valueRow) Then
+                ' 後面幾列也是數值（一張表多筆單）：只讀第一列，但這些列也不做左右一組
+                r2 = valueRow + 1
+                Do While IsExtraValueRow(data, r, r2)
+                    isValueRow(r2) = True
+                    r2 = r2 + 1
+                Loop
+                If r2 > valueRow + 1 Then
                     AddNote "表格有不只一列數值（一封信多筆單），只讀第一列，請確認是要填的那一筆"
                 End If
             End If
@@ -663,18 +671,18 @@ Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As 
     mSrc(field) = ShowVal(raw) & "（" & PriLabel(pri) & "）"
 End Sub
 
-' 數值列的下一列在 3 個以上的表頭下也有值（例：MS 一張表三筆單）；下一列本身是表頭（下一張表）時不算
-Private Function MoreValueRow(ByRef data As Variant, ByVal headerRow As Long, ByVal valueRow As Long) As Boolean
+' 第 r 列在 3 個以上的表頭下有值（例：MS 一張表三筆單）；第 r 列本身是表頭（下一張表）時不算
+Private Function IsExtraValueRow(ByRef data As Variant, ByVal headerRow As Long, ByVal r As Long) As Boolean
     Dim c As Long, filled As Long, headers As Long
 
-    If valueRow >= UBound(data, 1) Then Exit Function
+    If r > UBound(data, 1) Then Exit Function
     For c = 1 To UBound(data, 2)
-        If mHeaderMap.Exists(CellKey(data(valueRow + 1, c))) Then headers = headers + 1
+        If mHeaderMap.Exists(CellKey(data(r, c))) Then headers = headers + 1
         If mHeaderMap.Exists(CellKey(data(headerRow, c))) Then
-            If Not IsBlankVal(data(valueRow + 1, c)) Then filled = filled + 1
+            If Not IsBlankVal(data(r, c)) Then filled = filled + 1
         End If
     Next c
-    MoreValueRow = (filled >= 3 And headers < 3)
+    IsExtraValueRow = (filled >= 3 And headers < 3)
 End Function
 
 Private Function GetVal(ByVal field As String) As Variant
@@ -775,7 +783,7 @@ Private Function FieldLabel(ByVal field As String) As String
         Case "SBLEVEL": FieldLabel = "Super Bull Level"
         Case "ACBARRIER": FieldLabel = "Autocall Barrier"
         Case "ACFREQ": FieldLabel = "Autocall Frequency／Autocall Freq／Autocall Date(one-time)"
-        Case "FLATCPN": FieldLabel = "Autocall Coupon Flat／Bonus Coupon／Coupon Flat"
+        Case "FLATCPN": FieldLabel = "Autocall Coupon Flat／Autocall Flat Coupon／Bonus Coupon／Coupon Flat"
         Case "CPNBARRIER": FieldLabel = "Coupon Barrier"
         Case Else: FieldLabel = field
     End Select

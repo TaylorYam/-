@@ -157,7 +157,8 @@ def expected(rec, t, inl):
         e['K2'] = num(pick(t, 'strike') if hc else pick(t, 'superbulllevel'))
         e['L2'] = 'Period End'
         e['M2'] = num(pick(t, 'autocallbarrier') if hc else pick(t, 'superbulllevel'))
-        e['N2'] = num(pick(t, 'autocallcouponflat', 'bonuscouponflat', 'autocallflatcoupon'))
+        e['N2'] = num(pick(t, 'autocallcouponflat', 'bonuscouponflat', 'autocallflatcoupon', 'bonuscoupon',
+                           'couponflat'))
         e['R2'] = ''; e['S2'] = ''
     elif prod in BEN:   # E2 = Tenor（下面算），KO Barrier 有值時留空；M2 沒有 Coupon Barrier 時 = Strike
         e['K2'] = num(pick(t, 'strike', 'putstrike'))
@@ -182,7 +183,7 @@ def expected(rec, t, inl):
     tenor = num(pick(t, 'tenorm', 'tenor', 'tenormonths'))
     if tenor is None and pick(t, 'settlementfrequency').lower() == 'monthly': tenor = num(pick(t, 'noofperiods'))
     e['P2'] = tenor
-    if prod in BEN: e['E2'] = None if pick(t, 'kobarrier') else tenor
+    if prod in BEN: e['E2'] = None if pick(t, 'kobarrier', 'autocall', 'ko') else tenor
     e['O5'] = date(pick(both, 'tradedate', 'strikedate', 'initialvaluationdate'))
     e['O6'] = date(pick(both, 'issuedate', 'issuancedate', 'issuedatetcalendardays'))
     e['O7'] = date(pick(both, 'finalvaluationdate', 'finalfixingdate', 'redemptionvaluationdate', 'finalvaluation'))

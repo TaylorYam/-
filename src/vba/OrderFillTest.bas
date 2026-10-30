@@ -720,6 +720,15 @@ Public Function Test_OrderFill_RulesReport() As String
     If fails = "" Then fails = CompareCell(wsT.Range("F2"), "MU UW") & ExpectNote(report, "表格有不只一列數值")
     Tally "一張表有多列數值 → 讀第一列並提醒", fails, passCount, total, detail
 
+    ' 第二列數值裡剛好有表頭字樣：不做左右一組（否則 Strike 會變成不一致）
+    PasteBEN wsP, "MS"
+    wsP.Range("A10:L10").Copy wsP.Range("A11")
+    PutText wsP.Range("M11"), "Put Strike"
+    PutText wsP.Range("N11"), "50%"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("K2"), 90) & ExpectNoNote(report, "Strike 不一致")
+    Tally "一張表的第二列數值不做左右一組", fails, passCount, total, detail
+
     PasteBEN wsP, "MS"
     fails = RunFill(report)
     If fails = "" Then fails = ExpectNoNote(report, "表格有不只一列數值")
