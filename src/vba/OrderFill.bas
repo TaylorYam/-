@@ -36,6 +36,7 @@ Private mKey As Object         ' 欄位代號 → 比較用的值
 Private mSrc As Object         ' 欄位代號 → 讀到的值與位置
 Private mConflict As Object    ' 欄位代號 → 兩處以上不一致時的各處值
 Private mFlag As Object        ' 欄位代號 → 已經提醒過（格式不認得、不一致、認不得）
+Private mFieldNotes As Object  ' 欄位代號 → 讀信時這欄的提醒（Collection），商品不填這欄時拿掉
 Private mNotes As String       ' 摘要的提醒
 
 '==================================================
@@ -194,6 +195,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         Exit Function
     End If
     isRA = (product = "Range Accrual")
+    If isRA Then DropFieldNotes "FINAL"   ' Range Accrual 的 O7 不填，也不提醒 Final valuation date
 
     ccy = UCase$(Trim$(CStr(GetVal("CURRENCY"))))
 
@@ -406,7 +408,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         WarnMissing "TRADE"
     End If
     If Not hasIssue Then WarnMissing "ISSUE"
-    If Not hasFinal Then WarnMissing "FINAL"
+    If Not hasFinal And Not isRA Then WarnMissing "FINAL"   ' Range Accrual 的 O7 不填
     If Not hasMaturity Then WarnMissing "MATURITY"
     If initPrice = "" And Not isRA Then WarnMissing "INITPRICE"
 
@@ -452,7 +454,12 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Application.EnableEvents = False
 
     If hasIssue Then wsT.Range("O6").Value = Format$(issueDate, "yyyy/mm/dd")
-    If hasFinal Then wsT.Range("O7").Value = Format$(finalDate, "yyyy/mm/dd")
+    ' Range Accrual 一律不填 O7（信裡有也不填），清掉 Term 事件推算的值
+    If isRA Then
+        wsT.Range("O7").ClearContents
+    ElseIf hasFinal Then
+        wsT.Range("O7").Value = Format$(finalDate, "yyyy/mm/dd")
+    End If
     If hasMaturity Then wsT.Range("O8").Value = Format$(maturityDate, "yyyy/mm/dd")
 
     Application.EnableEvents = prevEvents
@@ -615,6 +622,7 @@ Private Sub CollectFields(ByRef data As Variant)
     Set mSrc = CreateObject("Scripting.Dictionary")
     Set mConflict = CreateObject("Scripting.Dictionary")
     Set mFlag = CreateObject("Scripting.Dictionary")
+    Set mFieldNotes = CreateObject("Scripting.Dictionary")
     mNotes = ""
 
     nR = UBound(data, 1)
@@ -758,7 +766,7 @@ Private Sub RecordField(ByVal field As String, ByVal v As Variant, ByVal pri As 
         Case Else
             key = "T" & LCase$(CollapseSpaces(CStr(v)))
     End Select
-    If revised Then AddNote FieldLabel(field) & " 有修改：" & ShowVal(raw) & "，取最後的值"
+    If revised Then AddFieldNote field, FieldLabel(field) & " 有修改：" & ShowVal(raw) & "，取最後的值"
 
     If mKey.Exists(field) Then
         If mKey(field) <> key Then
@@ -854,7 +862,27 @@ End Sub
 ' 提醒並記下這欄已提醒過，之後不再重複提醒「找不到」
 Private Sub FlagField(ByVal field As String, ByVal text As String)
     mFlag(field) = True
+    AddFieldNote field, text
+End Sub
+
+' 提醒並記下是哪一欄的提醒（DropFieldNotes 用）
+Private Sub AddFieldNote(ByVal field As String, ByVal text As String)
+    If Not mFieldNotes.Exists(field) Then mFieldNotes.Add field, New Collection
+    mFieldNotes(field).Add text
     AddNote text
+End Sub
+
+' 商品不填這欄時（例：Range Accrual 的 O7），拿掉讀信時這欄的提醒（格式不認得、不一致、有修改）
+Private Sub DropFieldNotes(ByVal field As String)
+    Dim t As Variant
+
+    If mFieldNotes.Exists(field) Then
+        For Each t In mFieldNotes(field)
+            mNotes = RemoveWarn(mNotes, CStr(t))
+        Next t
+        mFieldNotes.Remove field
+    End If
+    If mFlag.Exists(field) Then mFlag.Remove field
 End Sub
 
 Private Function IsFlagged(ByVal field As String) As Boolean
@@ -1558,4 +1586,12 @@ Private Function AddWarn(ByVal baseText As String, ByVal newText As String) As S
     Else
         AddWarn = baseText & vbCrLf & "- " & newText
     End If
+End Function
+
+' 拿掉 AddWarn 加的一則提醒（只拿掉第一個完全相同的）
+Private Function RemoveWarn(ByVal baseText As String, ByVal oldText As String) As String
+    Dim s As String
+
+    s = Replace(vbCrLf & baseText & vbCrLf, vbCrLf & "- " & oldText & vbCrLf, vbCrLf, 1, 1)
+    If Len(s) > 4 Then RemoveWarn = Mid$(s, 3, Len(s) - 4)
 End Function

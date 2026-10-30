@@ -83,7 +83,8 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - 保本型商品（E5 下拉選單，目前只有 `Range Accrual`）：
   - E5 有選時，A2 = 選的商品。信裡的 Product 是別的商品（包含 MS 判定的 DACN）或認不得，或信裡沒有 Product 也沒有 RA 才有的欄位時，不填入，`Term` 不變。
   - E5 沒選、但信看起來是 Range Accrual 時不填入，`Term` 不變，請選好再填。看起來是 Range Accrual：Product 轉換後是 `Range Accrual`，或有 RA 才有的欄位（玉山詢價格式的 `Coupon frequency=Callable frequency`、BNP 的 `DRA coupon (%)`、BARC 的 `RA Rate`）。
-- Range Accrual 只填 A～F、O～Q、T、V；G～N、R、S、O9 留空，也不提醒找不到 Strike、KO、Coupon、Barrier Type、KI、期初價格：
+- Range Accrual 只填 A～F、O～Q、T、V；G～N、R、S、O7、O9 留空，也不提醒找不到 Strike、KO、Coupon、Barrier Type、KI、Final valuation date、期初價格：
+  - O7（Final valuation date）一律不填：信裡有也不填，`Term` 事件推算的值和上一筆的值都會清掉；信裡的 Final valuation date 格式不認得、不一致或有修改也不提醒。填入後手動改 O5、O6、P2 或 Q2 時，`Term` 既有的事件仍會重算 O7，請再清掉。
   - E2（Non-call，月）：BNP 的 `Non call period (Y)` × 12；玉山詢價格式的 `Call Feature`（GS 的 autocall 是 `Autocall Feature`）、BARC 的 `NC` 取 `NC` 後面的期間：`NC 1Y*3M` → 12、`NC 3M*3M` → 3、`NC 0.25Y X 3M` → 3、`1Y` → 12。BNP 的 `Is Callable` 是 `No`、寫法認不得或不是整月數時留空並提醒；信裡沒有這些欄位時留空並提醒找不到。
   - F2：只有 `RA Mapping.xlsx` 裡的兩種。連 CMS → `USD SOFR CMS 10Y`（信裡寫 `USD SOFR CMS 10Y ≦ 5.0%`、BNP 的 `USS10Y`、BARC 的 `CMS10Y`）；連 CMT → `USD CMT 10Y`（`USD CMT 10Y`、BNP 的 `UCMT10`）。其他（例：CA 的股權連結 `TSM UN ≧ 75%`、不是美元的 `EUR CMS 10Y`）留空並提醒。標的讀 `Underlying`（BNP）、`Index`（BARC）、`Condition_1`（玉山詢價格式）。
   - O2：`Upfront/Note Price (%)`（BNP）、`Reoffer`（BARC）；玉山詢價格式只有 `UF`，O2 = 100 − UF（只有 Range Accrual 讀 `UF`）。
@@ -96,7 +97,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - 信中沒有 Product 時不預設，A2 留空並提醒。只有 SG 例外：`AutoCall` 是單一數字、有 `Put Strike`，而且 `Fixed Coupons` 是 `All Periods` 時推定為 `FCN`、是 `First Period` 或 `First Two Periods` 時推定為 `DACN`，並提醒確認。SG 的樣本只有一封 FCN 和幾封 DACN，無法確認 SG 其他類似產品（例如 `FCN_Stepdown`）的信不會也符合條件，所以推定後請一定核對 A2；如果改成其他產品，V2 的 0 不會自動清掉，請一併清空。
 - Floor Coupon（V2）：A2 是 `FCN`、`DACN`、`FCN_Express`、`Super Bull`、`Regular BEN` 或 `Digital BEN`（包含 SG 推定、Citi 的 `FCA`、MS 判定的 DACN）時填 0；`Range Accrual` 見上面；其他產品（包含 `FCN_Stepdown` 等變體）或 A2 留空時清空，避免上一筆的值留到下一筆。
 - 信中沒有 Trade date 時 O5 填今天。
-- Issue／Final／Maturity date 沒有時，沿用 `Term` 既有邏輯推算，並提醒。
+- Issue／Final／Maturity date 沒有時，沿用 `Term` 既有邏輯推算，並提醒（Range Accrual 的 O7 不填，見上面）。
 - 期初價格：Opening → 開盤價；Closing → 收盤價；VWAP → VWAP；其他寫法留空並提醒。
 - 回填時會暫停 `Term` 的事件，避免信裡的日期被重算覆蓋。之後只重新觸發 D2、P2，讓「產品名稱」的幣別與期間跟著更新。
 - 不會動到 `Term!U2`、`Q6`、`O10`。
@@ -135,7 +136,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 `check.py` 自己讀信件表格算出應填值（不呼叫 VBA），再逐欄和回填結果比對。結果分成三類：
 
-- 一致：也包含用到推算的信。信裡沒有日期（或日期格式不認得，例：BARC 的 `Issue Date` 是 `1w`）、工具有提醒時，O5 填今天，O6～O8 由 `Term` 推算，這些欄位不算不一致。不寫 Trade date 的上手（CA、Natixis、Nomura、DBS、MS、UBS 等）屬於這類，維持現狀。
+- 一致：也包含用到推算的信。信裡沒有日期（或日期格式不認得，例：BARC 的 `Issue Date` 是 `1w`）、工具有提醒時，O5 填今天，O6～O8 由 `Term` 推算（Range Accrual 的 O7 不填），這些欄位不算不一致。不寫 Trade date 的上手（CA、Natixis、Nomura、DBS、MS、UBS 等）屬於這類，維持現狀。
 - 不一致：逐封看原信，判斷是工具錯、信件特殊，還是 `check.py` 的規則不足。已知不處理的情況：
   - 一封信兩筆單（兩張表，BNP、BARC、MS、SG、CA）：不同的欄位留空並提醒。請一次只貼一張表。
   - 同一格拆成兩段（BNP，例：`MRVL`／`UW`）：只讀到前半段。
@@ -160,7 +161,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 不一致的都是上面列的已知情況：Super Bull 是 BNP 一封信兩筆單 5 封、`MRVL`／`UW` 拆成兩段 2 封；FCN_Express 是 BARC 一封信兩筆單 4 封；BEN 是 MS 一封信兩張表 2 封；Range Accrual 是一封信兩張表 7 封（SG 3 封、CA 4 封），另 1 封（GS）是 `check.py` 讀不到分成兩行的 `Issue date (T+7)`、`Maturity date`，工具的值正確。BEN 另有 7 封是一張表多筆單（MS 4 封、HSBC 3 封），只讀第一列並提醒。BEN 的「其中用到推算」原本寫 114，誤把 2 封不一致也算進去，已更正為 112。
 
-Range Accrual 是用 `-ProtectedProduct "Range Accrual"`、`-Manifest` 跑的：玉山詢價格式的 163 封判斷不出上手，依檔名在 C3 選上手後重填；CA 的 9 封股權連結（`TSM UN`）F2 留空並提醒。沒選保本型商品時，247 封都不填入並提醒。2026-10-30 起認得 `Issue date (T+7)`：9 封改讀信裡的發行日，O6 不再推算；其中 4 封沒有 Trade date，原本推算成「今天 + 7 天」，和信裡的發行日不同。統計數字不變；其他四個商品重跑，每封的結果與提醒都不變。
+Range Accrual 是用 `-ProtectedProduct "Range Accrual"`、`-Manifest` 跑的：玉山詢價格式的 163 封判斷不出上手，依檔名在 C3 選上手後重填；CA 的 9 封股權連結（`TSM UN`）F2 留空並提醒。沒選保本型商品時，247 封都不填入並提醒。2026-10-30 起認得 `Issue date (T+7)`：9 封改讀信裡的發行日，O6 不再推算；其中 4 封沒有 Trade date，原本推算成「今天 + 7 天」，和信裡的發行日不同。統計數字不變；其他四個商品重跑，每封的結果與提醒都不變。同日改成 Range Accrual 不填 O7 後重跑：247 封的 O7 都是空白、沒有 Final valuation date 的提醒，其他儲存格與提醒都不變。
 
 DACN 加上 SG `First Two Periods` 的推定後重跑（#23），統計不變；這 2 封的 A2 從留空改成推定 DACN。
 
@@ -243,7 +244,8 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - Principal-protected products (E5 drop-down, currently only `Range Accrual`):
   - When E5 is picked, A2 = the picked product. If the mail's Product is another product (including MS's DACN) or is not recognized, or the mail has neither a Product nor a field only RA mails have, nothing is filled and `Term` is unchanged.
   - When E5 is blank but the mail looks like a Range Accrual, nothing is filled and `Term` is unchanged; pick E5 and fill again. A mail looks like a Range Accrual when its Product converts to `Range Accrual`, or it has a field only RA mails have (`Coupon frequency=Callable frequency` in E.SUN's quote template, BNP's `DRA coupon (%)`, BARC's `RA Rate`).
-- Range Accrual fills only A–F, O–Q, T, and V. G–N, R, S, and O9 stay blank, with no missing Strike, KO, Coupon, Barrier Type, KI, or initial price warning:
+- Range Accrual fills only A–F, O–Q, T, and V. G–N, R, S, O7, and O9 stay blank, with no missing Strike, KO, Coupon, Barrier Type, KI, Final valuation date, or initial price warning:
+  - O7 (Final valuation date) is never filled: not even when the mail has one, and the value calculated by `Term`'s events or left from the previous trade is cleared. There is no warning when the mail's Final valuation date is unrecognized, inconsistent, or revised. If you later edit O5, O6, P2, or Q2 by hand, `Term`'s existing events recalculate O7; clear it again.
   - E2 (non-call, months): BNP's `Non call period (Y)` × 12. For E.SUN's quote template `Call Feature` (GS's autocall uses `Autocall Feature`) and BARC's `NC`, the period after `NC` is used: `NC 1Y*3M` → 12, `NC 3M*3M` → 3, `NC 0.25Y X 3M` → 3, `1Y` → 12. When BNP's `Is Callable` is `No`, the value is not recognized, or the result is not a whole number of months, E2 is left blank with a warning; when the mail has none of these fields, E2 is left blank with a missing-field warning.
   - F2: only the two underlyings in `RA Mapping.xlsx`. CMS-linked → `USD SOFR CMS 10Y` (written `USD SOFR CMS 10Y ≦ 5.0%`, BNP's `USS10Y`, or BARC's `CMS10Y`); CMT-linked → `USD CMT 10Y` (`USD CMT 10Y` or BNP's `UCMT10`). Anything else (for example CA's equity-linked `TSM UN ≧ 75%`, or a non-USD rate such as `EUR CMS 10Y`) is left blank with a warning. The underlying is read from `Underlying` (BNP), `Index` (BARC), or `Condition_1` (E.SUN's quote template).
   - O2: `Upfront/Note Price (%)` (BNP) or `Reoffer` (BARC). E.SUN's quote template has only `UF`, so O2 = 100 − UF (`UF` is read only for Range Accrual).
@@ -256,7 +258,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - When the mail has no Product, nothing is assumed: A2 is left blank with a warning. SG is the only exception: when `AutoCall` is a single number and there is a `Put Strike`, the product is inferred as `FCN` if `Fixed Coupons` is `All Periods` and as `DACN` if it is `First Period` or `First Two Periods`, with a warning to confirm it. Only one SG FCN sample and a few SG DACN samples are available, so it is not known whether mails for similar SG products (such as `FCN_Stepdown`) also meet these conditions; always check A2 after an inference. If you change it to another product, the 0 in V2 is not cleared automatically, so clear it as well.
 - Floor Coupon (V2): 0 when A2 is `FCN`, `DACN`, `FCN_Express`, `Super Bull`, `Regular BEN`, or `Digital BEN` (including the SG inference, Citi's `FCA`, and MS's DACN); `Range Accrual` is described above; cleared for any other product (including variants such as `FCN_Stepdown`) or when A2 is blank, so a previous trade's value is not carried over.
 - When the mail has no Trade date, O5 is set to today.
-- Missing Issue / Final / Maturity dates are calculated by the existing `Term` logic, with a warning.
+- Missing Issue / Final / Maturity dates are calculated by the existing `Term` logic, with a warning (Range Accrual leaves O7 blank; see above).
 - Initial price: Opening → 開盤價; Closing → 收盤價; VWAP → VWAP; any other value is left blank with a warning.
 - `Term` events are suspended while writing, so mail dates are not overwritten by recalculation. Only D2 and P2 are re-triggered afterward, so the currency and tenor shown on `產品名稱` stay in sync.
 - `Term!U2`, `Q6`, and `O10` are not changed.
@@ -295,7 +297,7 @@ The paste follows each issuer's FCN sample in `起單信件格式.xlsx`, and `ex
 
 `check.py` reads the mail table itself to work out the expected values (it does not call the VBA), then compares them cell by cell with the fill result. Results fall into three groups:
 
-- Match: this includes mails that rely on calculated dates. When the mail has no date (or a date in an unrecognized format, such as BARC's `Issue Date` of `1w`) and the tool warns about it, O5 is today and O6 to O8 are calculated by `Term`; these cells do not count as mismatches. Issuers that do not send a Trade date (CA, Natixis, Nomura, DBS, MS, UBS, and others) fall here, and this stays as it is.
+- Match: this includes mails that rely on calculated dates. When the mail has no date (or a date in an unrecognized format, such as BARC's `Issue Date` of `1w`) and the tool warns about it, O5 is today and O6 to O8 are calculated by `Term` (Range Accrual leaves O7 blank); these cells do not count as mismatches. Issuers that do not send a Trade date (CA, Natixis, Nomura, DBS, MS, UBS, and others) fall here, and this stays as it is.
 - Mismatch: read the original mail and decide whether the tool is wrong, the mail is unusual, or the `check.py` rules are incomplete. Known cases that are not handled:
   - Two trades in one mail (two tables, BNP, BARC, MS, SG, and CA): the fields that differ are left blank with a warning. Paste one table at a time.
   - One cell split into two paragraphs (BNP, for example `MRVL` / `UW`): only the first part is read.
@@ -320,6 +322,6 @@ Products checked so far (Super Bull, DACN, and FCN_Express on 2026-10-29; BEN an
 
 All mismatches are the known cases listed above: for Super Bull, 5 BNP mails with two trades and 2 with `MRVL` / `UW` split; for FCN_Express, 4 BARC mails with two trades; for BEN, 2 MS mails with two tables; for Range Accrual, 7 mails with two tables (3 SG, 4 CA), plus 1 GS mail where `check.py` cannot read an `Issue date (T+7)` and a `Maturity date` split over two lines while the tool's value is correct. Another 7 BEN mails hold several trades in one table (4 MS, 3 HSBC); only the first row is read, with a warning. BEN's "of which calculated" count was previously given as 114, which wrongly included the 2 mismatches; it is corrected to 112.
 
-Range Accrual was run with `-ProtectedProduct "Range Accrual"` and `-Manifest`: the 163 mails in E.SUN's quote template have no detectable issuer and were filled again after picking the issuer in C3 from the file name; CA's 9 equity-linked mails (`TSM UN`) leave F2 blank with a warning. With no principal-protected product picked, none of the 247 mails is filled, each with a warning. Since 2026-10-30 `Issue date (T+7)` is recognized: 9 mails now take the issue date from the mail instead of calculating O6; 4 of them have no Trade date and were previously calculated as today + 7 days, which differed from the mail's issue date. The counts are unchanged, and a rerun of the other four products left every mail's result and warnings unchanged.
+Range Accrual was run with `-ProtectedProduct "Range Accrual"` and `-Manifest`: the 163 mails in E.SUN's quote template have no detectable issuer and were filled again after picking the issuer in C3 from the file name; CA's 9 equity-linked mails (`TSM UN`) leave F2 blank with a warning. With no principal-protected product picked, none of the 247 mails is filled, each with a warning. Since 2026-10-30 `Issue date (T+7)` is recognized: 9 mails now take the issue date from the mail instead of calculating O6; 4 of them have no Trade date and were previously calculated as today + 7 days, which differed from the mail's issue date. The counts are unchanged, and a rerun of the other four products left every mail's result and warnings unchanged. After Range Accrual stopped filling O7 on the same day, a rerun left O7 blank in all 247 mails with no Final valuation date warning; every other cell and warning was unchanged.
 
 DACN was rerun after adding the SG `First Two Periods` inference (#23) and the counts are unchanged; for those 2 mails, A2 is now inferred as DACN instead of left blank.
