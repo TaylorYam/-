@@ -51,7 +51,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - 百分比看儲存格：數字格式有 `%`（信件貼上後 `80.00%` 會變成 0.8 加 `%` 格式），或文字帶 `%`，就是百分比數字（→ 80）。沒有 `%` 時照填；如果值看起來像小數（Strike／KO／KI／Note Price ≤ 3、Coupon < 1），會提醒確認。
 - 數值欄位有逗號時不認，留空並提醒原文。例如 `105%, 100%`（列出多個值）、`98,50%`（逗號當小數點）。這些欄位都是百分比、月數或期數，不會用到千分位。
 - 改價取最後的值並提醒：`96.20%→96.15%`、`99.65->99.62`、`99.65=>99.62`、`99.92 >> 99.89`、`99.92 > 99.89`。
-- 日期另認 `20Oct26`、`15-Oct-26`、`20-Oct-2026`、`20 Oct 2026`。
+- 日期另認 `20Oct26`、`15-Oct-26`、`20-Oct-2026`、`20 Oct 2026`。玉山詢價格式的 `Issue date (T+7)` 是 Issue date（`T+` 後面不論幾天都認）。
 - 年期填月數，`Q2 = M`（Range Accrual 例外，見下）。Tenor 寫成年（例：`5Y`）時 P2 留空並提醒；同一封信另有月數的 Tenor 時，兩個值算不一致。SG 沒有 Tenor：`Settlement Frequency` 是 `Monthly` 時 Tenor = `No. of Periods`，否則留空並提醒。
 - KO Type 只認 `Daily`、`Daily Memory`、`Period End`、`Period End Memory`（不分大小寫）：
   - MS：`OBSERVATION` 是每期觀察，由 `KO Memory`（Yes／No）決定是否記憶式；KO Memory 空白、或和 KO Type 矛盾（例：`Daily Memory` 但 `No`）時留空並提醒。
@@ -138,7 +138,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 - 不一致：逐封看原信，判斷是工具錯、信件特殊，還是 `check.py` 的規則不足。已知不處理的情況：
   - 一封信兩筆單（兩張表，BNP、BARC、MS、SG、CA）：不同的欄位留空並提醒。請一次只貼一張表。
   - 同一格拆成兩段（BNP，例：`MRVL`／`UW`）：只讀到前半段。
-  - `check.py` 的限制：`Maturity date:` 和日期分成兩行時，`check.py` 讀不到（工具讀得到）。
+  - `check.py` 的限制：`Issue date (T+7):`、`Maturity date:` 和日期分成兩行時，`check.py` 讀不到（工具讀得到）。
 - 略過：不是起單內容。
 
 一張表多筆單（MS）時工具和 `check.py` 都只讀第一列，所以算一致；工具會提醒只讀第一列。
@@ -157,9 +157,9 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 | Regular BEN、Digital BEN | 143 | 141 | 112 | 2 | 0 |
 | Range Accrual | 247 | 239 | 239 | 8 | 0 |
 
-不一致的都是上面列的已知情況：Super Bull 是 BNP 一封信兩筆單 5 封、`MRVL`／`UW` 拆成兩段 2 封；FCN_Express 是 BARC 一封信兩筆單 4 封；BEN 是 MS 一封信兩張表 2 封；Range Accrual 是一封信兩張表 7 封（SG 3 封、CA 4 封），另 1 封（GS）是 `check.py` 讀不到分成兩行的 `Maturity date`，工具的值正確。BEN 另有 7 封是一張表多筆單（MS 4 封、HSBC 3 封），只讀第一列並提醒。BEN 的「其中用到推算」原本寫 114，誤把 2 封不一致也算進去，已更正為 112。
+不一致的都是上面列的已知情況：Super Bull 是 BNP 一封信兩筆單 5 封、`MRVL`／`UW` 拆成兩段 2 封；FCN_Express 是 BARC 一封信兩筆單 4 封；BEN 是 MS 一封信兩張表 2 封；Range Accrual 是一封信兩張表 7 封（SG 3 封、CA 4 封），另 1 封（GS）是 `check.py` 讀不到分成兩行的 `Issue date (T+7)`、`Maturity date`，工具的值正確。BEN 另有 7 封是一張表多筆單（MS 4 封、HSBC 3 封），只讀第一列並提醒。BEN 的「其中用到推算」原本寫 114，誤把 2 封不一致也算進去，已更正為 112。
 
-Range Accrual 是用 `-ProtectedProduct "Range Accrual"`、`-Manifest` 跑的：玉山詢價格式的 163 封判斷不出上手，依檔名在 C3 選上手後重填；CA 的 9 封股權連結（`TSM UN`）F2 留空並提醒。沒選保本型商品時，247 封都不填入並提醒。
+Range Accrual 是用 `-ProtectedProduct "Range Accrual"`、`-Manifest` 跑的：玉山詢價格式的 163 封判斷不出上手，依檔名在 C3 選上手後重填；CA 的 9 封股權連結（`TSM UN`）F2 留空並提醒。沒選保本型商品時，247 封都不填入並提醒。2026-10-30 起認得 `Issue date (T+7)`：9 封改讀信裡的發行日，O6 不再推算；其中 4 封沒有 Trade date，原本推算成「今天 + 7 天」，和信裡的發行日不同。統計數字不變。
 
 DACN 加上 SG `First Two Periods` 的推定後重跑（#23），統計不變；這 2 封的 A2 從留空改成推定 DACN。
 
@@ -210,7 +210,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
 - Percentages follow the cell: a number with a `%` number format (pasting `80.00%` from a mail gives 0.8 formatted as `%`) or text containing `%` is a percentage figure (→ 80). A value without `%` is written as is; if it looks like a decimal (Strike / KO / KI / Note Price ≤ 3, Coupon < 1), a warning asks for a check.
 - A numeric field containing a comma is not recognized; it is left blank and the warning shows the original text. Examples: `105%, 100%` (several values listed) and `98,50%` (comma as decimal point). These fields are percentages, months, or period counts, so they never need thousands separators.
 - Revised values take the last value, with a warning: `96.20%→96.15%`, `99.65->99.62`, `99.65=>99.62`, `99.92 >> 99.89`, `99.92 > 99.89`.
-- Dates also accept `20Oct26`, `15-Oct-26`, `20-Oct-2026`, and `20 Oct 2026`.
+- Dates also accept `20Oct26`, `15-Oct-26`, `20-Oct-2026`, and `20 Oct 2026`. `Issue date (T+7)` in E.SUN's quote template is the Issue date (any number of days after `T+` is accepted).
 - Tenor is written in months, with `Q2 = M` (Range Accrual is the exception; see below). A Tenor written in years (for example `5Y`) leaves P2 blank with a warning; when the same mail also has a Tenor in months, the two values count as inconsistent. SG has no Tenor: when `Settlement Frequency` is `Monthly`, Tenor = `No. of Periods`; otherwise it is left blank with a warning.
 - KO Type accepts only `Daily`, `Daily Memory`, `Period End`, and `Period End Memory` (case-insensitive):
   - MS: `OBSERVATION` means period-end observation, and `KO Memory` (Yes / No) decides memory. A blank KO Memory, or one that contradicts KO Type (for example, `Daily Memory` with `No`), leaves it blank with a warning.
@@ -297,7 +297,7 @@ The paste follows each issuer's FCN sample in `起單信件格式.xlsx`, and `ex
 - Mismatch: read the original mail and decide whether the tool is wrong, the mail is unusual, or the `check.py` rules are incomplete. Known cases that are not handled:
   - Two trades in one mail (two tables, BNP, BARC, MS, SG, and CA): the fields that differ are left blank with a warning. Paste one table at a time.
   - One cell split into two paragraphs (BNP, for example `MRVL` / `UW`): only the first part is read.
-  - A `check.py` limitation: when `Maturity date:` and the date are on separate lines, `check.py` does not read the date (the tool does).
+  - A `check.py` limitation: when `Issue date (T+7):` or `Maturity date:` and the date are on separate lines, `check.py` does not read the date (the tool does).
 - Skipped: not order content.
 
 When one table holds several trades (MS), both the tool and `check.py` read only the first row, so the mail counts as a match; the tool warns that only the first row was read.
@@ -316,8 +316,8 @@ Products checked so far (Super Bull, DACN, and FCN_Express on 2026-10-29; BEN an
 | Regular BEN, Digital BEN | 143 | 141 | 112 | 2 | 0 |
 | Range Accrual | 247 | 239 | 239 | 8 | 0 |
 
-All mismatches are the known cases listed above: for Super Bull, 5 BNP mails with two trades and 2 with `MRVL` / `UW` split; for FCN_Express, 4 BARC mails with two trades; for BEN, 2 MS mails with two tables; for Range Accrual, 7 mails with two tables (3 SG, 4 CA), plus 1 GS mail where `check.py` cannot read a `Maturity date` split over two lines while the tool's value is correct. Another 7 BEN mails hold several trades in one table (4 MS, 3 HSBC); only the first row is read, with a warning. BEN's "of which calculated" count was previously given as 114, which wrongly included the 2 mismatches; it is corrected to 112.
+All mismatches are the known cases listed above: for Super Bull, 5 BNP mails with two trades and 2 with `MRVL` / `UW` split; for FCN_Express, 4 BARC mails with two trades; for BEN, 2 MS mails with two tables; for Range Accrual, 7 mails with two tables (3 SG, 4 CA), plus 1 GS mail where `check.py` cannot read an `Issue date (T+7)` and a `Maturity date` split over two lines while the tool's value is correct. Another 7 BEN mails hold several trades in one table (4 MS, 3 HSBC); only the first row is read, with a warning. BEN's "of which calculated" count was previously given as 114, which wrongly included the 2 mismatches; it is corrected to 112.
 
-Range Accrual was run with `-ProtectedProduct "Range Accrual"` and `-Manifest`: the 163 mails in E.SUN's quote template have no detectable issuer and were filled again after picking the issuer in C3 from the file name; CA's 9 equity-linked mails (`TSM UN`) leave F2 blank with a warning. With no principal-protected product picked, none of the 247 mails is filled, each with a warning.
+Range Accrual was run with `-ProtectedProduct "Range Accrual"` and `-Manifest`: the 163 mails in E.SUN's quote template have no detectable issuer and were filled again after picking the issuer in C3 from the file name; CA's 9 equity-linked mails (`TSM UN`) leave F2 blank with a warning. With no principal-protected product picked, none of the 247 mails is filled, each with a warning. Since 2026-10-30 `Issue date (T+7)` is recognized: 9 mails now take the issue date from the mail instead of calculating O6; 4 of them have no Trade date and were previously calculated as today + 7 days, which differed from the mail's issue date. The counts are unchanged.
 
 DACN was rerun after adding the SG `First Two Periods` inference (#23) and the counts are unchanged; for those 2 mails, A2 is now inferred as DACN instead of left blank.
