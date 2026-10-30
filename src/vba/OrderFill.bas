@@ -406,7 +406,7 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
         WarnMissing "TRADE"
     End If
     If Not hasIssue Then WarnMissing "ISSUE"
-    If Not hasFinal Then WarnMissing "FINAL"
+    If Not hasFinal And Not isRA Then WarnMissing "FINAL"   ' Range Accrual 的 O7 不填
     If Not hasMaturity Then WarnMissing "MATURITY"
     If initPrice = "" And Not isRA Then WarnMissing "INITPRICE"
 
@@ -452,7 +452,12 @@ Public Function OrderFill_Run(ByVal silent As Boolean, ByRef report As String) A
     Application.EnableEvents = False
 
     If hasIssue Then wsT.Range("O6").Value = Format$(issueDate, "yyyy/mm/dd")
-    If hasFinal Then wsT.Range("O7").Value = Format$(finalDate, "yyyy/mm/dd")
+    ' Range Accrual 一律不填 O7（信裡有也不填），清掉 Term 事件推算的值
+    If isRA Then
+        wsT.Range("O7").ClearContents
+    ElseIf hasFinal Then
+        wsT.Range("O7").Value = Format$(finalDate, "yyyy/mm/dd")
+    End If
     If hasMaturity Then wsT.Range("O8").Value = Format$(maturityDate, "yyyy/mm/dd")
 
     Application.EnableEvents = prevEvents

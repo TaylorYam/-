@@ -245,7 +245,8 @@ def expected(rec, t, inl, protected=None):
     ip = re.search(r'Initial price\s*:\s*(vwap|opening price|closing price|[A-Za-z]+)', rec['text'], re.I)
     e['O9'] = {'vwap': 'VWAP', 'opening price': '開盤價', 'closing price': '收盤價'}.get(
         re.sub(r'\s+', ' ', ip[1]).strip().lower() if ip else '', '')
-    if prod == 'Range Accrual': e['O9'] = ''
+    if prod == 'Range Accrual':   # O7、O9 不填（O7 信裡有也不填）
+        e['O7'] = e['O9'] = ''
     return e
 
 
