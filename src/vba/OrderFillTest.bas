@@ -649,6 +649,27 @@ Public Function Test_OrderFill_RulesReport() As String
     If fails = "" Then fails = CompareCell(wsT.Range("O7"), "") & ExpectNoNote(report, "Final valuation")
     Tally "RA：信裡有 Final valuation date 也不填 O7", fails, passCount, total, detail
 
+    PasteRA wsP, "ESUN"
+    PutText wsP.Range("K7"), "Final valuation date: TBD"
+    PutText wsP.Range("A7"), "Maturity date: 2030/1/1 -> 2030/1/2"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O7"), "") & ExpectNoNote(report, "Final valuation") & _
+                               ExpectNote(report, "Maturity date 有修改")
+    Tally "RA：Final valuation date 格式不認得也不提醒（其他欄的提醒照舊）", fails, passCount, total, detail
+
+    PasteRA wsP, "ESUN"
+    PutText wsP.Range("K7"), "Final valuation date: 2036/10/22"
+    PutText wsP.Range("A7"), "Final valuation date: 2036/10/23 -> 2036/10/24"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O7"), "") & ExpectNoNote(report, "Final valuation")
+    Tally "RA：Final valuation date 不一致、有修改也不提醒", fails, passCount, total, detail
+
+    PasteBase wsP
+    PutText wsP.Range("A12"), "Final valuation date: TBD"
+    fails = RunFill(report)
+    If fails = "" Then fails = CompareCell(wsT.Range("O7"), "2027/04/20") & ExpectNote(report, "Final valuation date 格式不認得")
+    Tally "FCN：Final valuation date 格式不認得照樣提醒", fails, passCount, total, detail
+
     PasteRA wsP, "BNP"
     wsP.Range("M10").Value = 0.1
     fails = RunFill(report)

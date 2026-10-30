@@ -84,7 +84,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
   - E5 有選時，A2 = 選的商品。信裡的 Product 是別的商品（包含 MS 判定的 DACN）或認不得，或信裡沒有 Product 也沒有 RA 才有的欄位時，不填入，`Term` 不變。
   - E5 沒選、但信看起來是 Range Accrual 時不填入，`Term` 不變，請選好再填。看起來是 Range Accrual：Product 轉換後是 `Range Accrual`，或有 RA 才有的欄位（玉山詢價格式的 `Coupon frequency=Callable frequency`、BNP 的 `DRA coupon (%)`、BARC 的 `RA Rate`）。
 - Range Accrual 只填 A～F、O～Q、T、V；G～N、R、S、O7、O9 留空，也不提醒找不到 Strike、KO、Coupon、Barrier Type、KI、Final valuation date、期初價格：
-  - O7（Final valuation date）一律不填：信裡有也不填，`Term` 事件推算的值和上一筆的值都會清掉。填入後手動改 O5、O6、P2 或 Q2 時，`Term` 既有的事件仍會重算 O7，請再清掉。
+  - O7（Final valuation date）一律不填：信裡有也不填，`Term` 事件推算的值和上一筆的值都會清掉；信裡的 Final valuation date 格式不認得、不一致或有修改也不提醒。填入後手動改 O5、O6、P2 或 Q2 時，`Term` 既有的事件仍會重算 O7，請再清掉。
   - E2（Non-call，月）：BNP 的 `Non call period (Y)` × 12；玉山詢價格式的 `Call Feature`（GS 的 autocall 是 `Autocall Feature`）、BARC 的 `NC` 取 `NC` 後面的期間：`NC 1Y*3M` → 12、`NC 3M*3M` → 3、`NC 0.25Y X 3M` → 3、`1Y` → 12。BNP 的 `Is Callable` 是 `No`、寫法認不得或不是整月數時留空並提醒；信裡沒有這些欄位時留空並提醒找不到。
   - F2：只有 `RA Mapping.xlsx` 裡的兩種。連 CMS → `USD SOFR CMS 10Y`（信裡寫 `USD SOFR CMS 10Y ≦ 5.0%`、BNP 的 `USS10Y`、BARC 的 `CMS10Y`）；連 CMT → `USD CMT 10Y`（`USD CMT 10Y`、BNP 的 `UCMT10`）。其他（例：CA 的股權連結 `TSM UN ≧ 75%`、不是美元的 `EUR CMS 10Y`）留空並提醒。標的讀 `Underlying`（BNP）、`Index`（BARC）、`Condition_1`（玉山詢價格式）。
   - O2：`Upfront/Note Price (%)`（BNP）、`Reoffer`（BARC）；玉山詢價格式只有 `UF`，O2 = 100 − UF（只有 Range Accrual 讀 `UF`）。
@@ -136,7 +136,7 @@ repo 裡的 `特別約定事項&高齡適合度聲明書Generator_*.xlsm` 已內
 
 `check.py` 自己讀信件表格算出應填值（不呼叫 VBA），再逐欄和回填結果比對。結果分成三類：
 
-- 一致：也包含用到推算的信。信裡沒有日期（或日期格式不認得，例：BARC 的 `Issue Date` 是 `1w`）、工具有提醒時，O5 填今天，O6～O8 由 `Term` 推算，這些欄位不算不一致。不寫 Trade date 的上手（CA、Natixis、Nomura、DBS、MS、UBS 等）屬於這類，維持現狀。
+- 一致：也包含用到推算的信。信裡沒有日期（或日期格式不認得，例：BARC 的 `Issue Date` 是 `1w`）、工具有提醒時，O5 填今天，O6～O8 由 `Term` 推算（Range Accrual 的 O7 不填），這些欄位不算不一致。不寫 Trade date 的上手（CA、Natixis、Nomura、DBS、MS、UBS 等）屬於這類，維持現狀。
 - 不一致：逐封看原信，判斷是工具錯、信件特殊，還是 `check.py` 的規則不足。已知不處理的情況：
   - 一封信兩筆單（兩張表，BNP、BARC、MS、SG、CA）：不同的欄位留空並提醒。請一次只貼一張表。
   - 同一格拆成兩段（BNP，例：`MRVL`／`UW`）：只讀到前半段。
@@ -245,7 +245,7 @@ The mapping follows the rules structured-product-workflow used to read `(Order)`
   - When E5 is picked, A2 = the picked product. If the mail's Product is another product (including MS's DACN) or is not recognized, or the mail has neither a Product nor a field only RA mails have, nothing is filled and `Term` is unchanged.
   - When E5 is blank but the mail looks like a Range Accrual, nothing is filled and `Term` is unchanged; pick E5 and fill again. A mail looks like a Range Accrual when its Product converts to `Range Accrual`, or it has a field only RA mails have (`Coupon frequency=Callable frequency` in E.SUN's quote template, BNP's `DRA coupon (%)`, BARC's `RA Rate`).
 - Range Accrual fills only A–F, O–Q, T, and V. G–N, R, S, O7, and O9 stay blank, with no missing Strike, KO, Coupon, Barrier Type, KI, Final valuation date, or initial price warning:
-  - O7 (Final valuation date) is never filled: not even when the mail has one, and the value calculated by `Term`'s events or left from the previous trade is cleared. If you later edit O5, O6, P2, or Q2 by hand, `Term`'s existing events recalculate O7; clear it again.
+  - O7 (Final valuation date) is never filled: not even when the mail has one, and the value calculated by `Term`'s events or left from the previous trade is cleared. There is no warning when the mail's Final valuation date is unrecognized, inconsistent, or revised. If you later edit O5, O6, P2, or Q2 by hand, `Term`'s existing events recalculate O7; clear it again.
   - E2 (non-call, months): BNP's `Non call period (Y)` × 12. For E.SUN's quote template `Call Feature` (GS's autocall uses `Autocall Feature`) and BARC's `NC`, the period after `NC` is used: `NC 1Y*3M` → 12, `NC 3M*3M` → 3, `NC 0.25Y X 3M` → 3, `1Y` → 12. When BNP's `Is Callable` is `No`, the value is not recognized, or the result is not a whole number of months, E2 is left blank with a warning; when the mail has none of these fields, E2 is left blank with a missing-field warning.
   - F2: only the two underlyings in `RA Mapping.xlsx`. CMS-linked → `USD SOFR CMS 10Y` (written `USD SOFR CMS 10Y ≦ 5.0%`, BNP's `USS10Y`, or BARC's `CMS10Y`); CMT-linked → `USD CMT 10Y` (`USD CMT 10Y` or BNP's `UCMT10`). Anything else (for example CA's equity-linked `TSM UN ≧ 75%`, or a non-USD rate such as `EUR CMS 10Y`) is left blank with a warning. The underlying is read from `Underlying` (BNP), `Index` (BARC), or `Condition_1` (E.SUN's quote template).
   - O2: `Upfront/Note Price (%)` (BNP) or `Reoffer` (BARC). E.SUN's quote template has only `UF`, so O2 = 100 − UF (`UF` is read only for Range Accrual).
@@ -297,7 +297,7 @@ The paste follows each issuer's FCN sample in `起單信件格式.xlsx`, and `ex
 
 `check.py` reads the mail table itself to work out the expected values (it does not call the VBA), then compares them cell by cell with the fill result. Results fall into three groups:
 
-- Match: this includes mails that rely on calculated dates. When the mail has no date (or a date in an unrecognized format, such as BARC's `Issue Date` of `1w`) and the tool warns about it, O5 is today and O6 to O8 are calculated by `Term`; these cells do not count as mismatches. Issuers that do not send a Trade date (CA, Natixis, Nomura, DBS, MS, UBS, and others) fall here, and this stays as it is.
+- Match: this includes mails that rely on calculated dates. When the mail has no date (or a date in an unrecognized format, such as BARC's `Issue Date` of `1w`) and the tool warns about it, O5 is today and O6 to O8 are calculated by `Term` (Range Accrual leaves O7 blank); these cells do not count as mismatches. Issuers that do not send a Trade date (CA, Natixis, Nomura, DBS, MS, UBS, and others) fall here, and this stays as it is.
 - Mismatch: read the original mail and decide whether the tool is wrong, the mail is unusual, or the `check.py` rules are incomplete. Known cases that are not handled:
   - Two trades in one mail (two tables, BNP, BARC, MS, SG, and CA): the fields that differ are left blank with a warning. Paste one table at a time.
   - One cell split into two paragraphs (BNP, for example `MRVL` / `UW`): only the first part is read.
